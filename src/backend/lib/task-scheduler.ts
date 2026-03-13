@@ -161,16 +161,88 @@ export class TaskScheduler {
     const worktreeName = `task-${task.id}`;
     const worktreePath = path.join(process.cwd(), '.claude', 'worktrees', worktreeName);
 
-    // TODO: Implement agent spawning with ralph-loop
-    // TODO: Implement completion monitoring
+    // Spawn agent with ralph-loop in isolated worktree
+    const sessionId = await this.spawnAgent(task, worktreeName);
 
-    // Mark task as working with worktree path
+    // Mark task as working with worktree path and session ID
     db.prepare(`
       UPDATE tasks
-      SET status = 'working', started_at = ?, worktree_path = ?
+      SET status = 'working', started_at = ?, worktree_path = ?, assigned_agent_session_id = ?
       WHERE id = ?
-    `).run(new Date().toISOString(), worktreePath, task.id);
+    `).run(new Date().toISOString(), worktreePath, sessionId, task.id);
 
-    console.log(`✓ Agent spawned for task ${task.id} in worktree ${worktreeName}`);
+    console.log(`✓ Agent spawned for task ${task.id} (session: ${sessionId}) in worktree ${worktreeName}`);
+  }
+
+  /**
+   * Spawn a Claude agent with ralph-loop
+   */
+  private async spawnAgent(task: Task, worktreeName: string): Promise<string> {
+    const sessionId = `agent-task-${task.id}-${Date.now()}`;
+    const projectRoot = process.cwd();
+
+    // Build the prompt for ralph-loop
+    const prompt = this.buildTaskPrompt(task);
+
+    // Create batch script to spawn CMD window with Claude
+    const scriptPath = path.join(projectRoot, '.gogetajob', 'temp', `spawn-${task.id}.bat`);
+    const scriptDir = path.dirname(scriptPath);
+
+    // Ensure temp directory exists
+    if (!require('fs').existsSync(scriptDir)) {
+      require('fs').mkdirSync(scriptDir, { recursive: true });
+    }
+
+    // Write batch script
+    const scriptContent = `@echo off
+title GoGetAJob Agent - Task ${task.id}
+cd /d "${projectRoot}"
+echo Starting agent for task ${task.id} in worktree ${worktreeName}
+echo.
+claude --worktree ${worktreeName} /ralph-loop "${prompt.replace(/"/g, '""')}" --completion-promise "${task.completion_promise}" --max-iterations 100
+echo.
+echo Agent completed for task ${task.id}
+pause
+`;
+
+    require('fs').writeFileSync(scriptPath, scriptContent, 'utf-8');
+
+    // Spawn CMD window with the script
+    spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: projectRoot
+    }).unref();
+
+    console.log(`   Spawned CMD window for task ${task.id}`);
+
+    return sessionId;
+  }
+
+  /**
+   * Build the prompt for ralph-loop
+   */
+  private buildTaskPrompt(task: Task): string {
+    // Get project info
+    const position = db.prepare(
+      'SELECT * FROM positions WHERE id = ?'
+    ).get(task.position_id) as Position;
+
+    const project = db.prepare(
+      'SELECT * FROM projects WHERE id = ?'
+    ).get(position.project_id) as Project;
+
+    return `You are an autonomous AI agent contributing to: ${project.name}
+
+Your task: ${task.description}
+
+You have full autonomy to:
+- Explore using /codebase-research
+- Plan using /brainstorming
+- Create sub-tasks by inserting to database
+- Implement changes
+- Commit using /codeblend-commit
+
+When completed: <promise>${task.completion_promise}</promise>`;
   }
 }
