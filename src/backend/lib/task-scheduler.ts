@@ -12,7 +12,6 @@
 import { db } from './database';
 import { spawn } from 'child_process';
 import * as path from 'path';
-import * as fs from 'fs';
 
 interface Task {
   id: number;
@@ -45,13 +44,9 @@ interface Project {
 export class TaskScheduler {
   private pollingInterval: NodeJS.Timeout | null = null;
   private readonly POLL_INTERVAL_MS = 5000; // Poll every 5 seconds
-  private readonly WORKTREE_BASE = path.join(process.cwd(), '.gogetajob', 'worktrees');
 
   constructor() {
-    // Ensure worktree base directory exists
-    if (!fs.existsSync(this.WORKTREE_BASE)) {
-      fs.mkdirSync(this.WORKTREE_BASE, { recursive: true });
-    }
+    // Constructor now empty - worktrees managed by Claude Code
   }
 
   /**
@@ -162,8 +157,9 @@ export class TaskScheduler {
 
     console.log(`🚀 Spawning agent for task ${task.id}: ${task.description}`);
 
-    // Create isolated worktree
-    const worktreePath = await this.createWorktree(task.id, project.name);
+    // Generate worktree name for Claude Code's native --worktree flag
+    const worktreeName = `task-${task.id}`;
+    const worktreePath = path.join(process.cwd(), '.claude', 'worktrees', worktreeName);
 
     // TODO: Implement agent spawning with ralph-loop
     // TODO: Implement completion monitoring
@@ -175,68 +171,6 @@ export class TaskScheduler {
       WHERE id = ?
     `).run(new Date().toISOString(), worktreePath, task.id);
 
-    console.log(`✓ Agent spawned for task ${task.id} in worktree ${worktreePath}`);
-  }
-
-  /**
-   * Create an isolated git worktree for a task
-   */
-  private async createWorktree(taskId: number, projectName: string): Promise<string> {
-    const worktreeName = `task-${taskId}`;
-    const worktreePath = path.join(this.WORKTREE_BASE, projectName, worktreeName);
-    const branchName = `agent/task-${taskId}`;
-
-    console.log(`📁 Creating worktree: ${worktreePath}`);
-
-    // Ensure parent directory exists
-    const parentDir = path.dirname(worktreePath);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-
-    // Create worktree with new branch
-    await this.execGitCommand(
-      `git worktree add -b ${branchName} "${worktreePath}" HEAD`,
-      process.cwd()
-    );
-
-    console.log(`✓ Worktree created: ${worktreePath}`);
-    return worktreePath;
-  }
-
-  /**
-   * Execute a git command
-   */
-  private execGitCommand(command: string, cwd: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(command, [], {
-        shell: true,
-        cwd,
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      proc.on('close', (code) => {
-        if (code === 0) {
-          resolve(stdout);
-        } else {
-          reject(new Error(`Git command failed: ${stderr}`));
-        }
-      });
-
-      proc.on('error', (error) => {
-        reject(error);
-      });
-    });
+    console.log(`✓ Agent spawned for task ${task.id} in worktree ${worktreeName}`);
   }
 }
