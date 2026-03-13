@@ -13,7 +13,14 @@
       "Bash(npm install -D typescript @types/node @types/express @types/better-sqlite3 @types/cors ts-node nodemon concurrently)",
       "Bash(npm install react react-dom)",
       "Bash(npm install -D @types/react @types/react-dom esbuild echarts)",
-      "Bash(npx ts-node src/backend/test-db.ts)"
+      "Bash(npx ts-node src/backend/test-db.ts)",
+      "Bash(npm run build)",
+      "Bash(npm install --save-dev @types/node)",
+      "Bash(npm run build:frontend)",
+      "Bash(npm start)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(node server.js)",
+      "Bash(npm run build:backend)"
     ]
   }
 }

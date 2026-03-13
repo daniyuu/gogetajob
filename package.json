@@ -4,7 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:backend": "tsc",
+    "build:frontend": "node esbuild.config.mjs",
+    "build": "npm run build:backend && npm run build:frontend",
+    "dev:backend": "tsc --watch",
+    "dev:frontend": "node esbuild.config.mjs --watch",
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "start": "node server.js"
   },
   "repository": {
     "type": "git",
