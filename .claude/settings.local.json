@@ -24,7 +24,9 @@
       "Bash(curl -s http://localhost:9393)",
       "Bash(pkill -f \"node server.js\")",
       "Bash(curl -s http://localhost:9393/api/projects)",
-      "Bash(curl -X POST http://localhost:9393/api/projects -H \"Content-Type: application/json\" -d '{\"\"repo_url\"\":\"\"https://github.com/facebook/react\"\"}')"
+      "Bash(curl -X POST http://localhost:9393/api/projects -H \"Content-Type: application/json\" -d '{\"\"repo_url\"\":\"\"https://github.com/facebook/react\"\"}')",
+      "Bash(sqlite3 data/gogetajob.db \"ALTER TABLE project_snapshots ADD COLUMN price INTEGER DEFAULT 0\")",
+      "Bash(node -e \"const Database = require\\(''better-sqlite3''\\); const db = new Database\\(''data/gogetajob.db''\\); db.exec\\(''ALTER TABLE project_snapshots ADD COLUMN price INTEGER DEFAULT 0''\\); console.log\\(''Added price column''\\); db.close\\(\\);\")"
     ]
   }
 }

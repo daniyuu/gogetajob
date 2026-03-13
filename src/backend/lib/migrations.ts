@@ -26,6 +26,7 @@ export function runMigrations() {
       forks INTEGER DEFAULT 0,
       open_issues INTEGER DEFAULT 0,
       commits_count INTEGER DEFAULT 0,
+      price INTEGER DEFAULT 0,
       snapshot_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
