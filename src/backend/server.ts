@@ -23,6 +23,11 @@ const daemon = new BackgroundDaemon();
 // Start background daemon
 daemon.start();
 
+// Resume active positions
+workScheduler.resumeActivePositions().catch(error => {
+  console.error('Failed to resume active positions:', error);
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -99,13 +104,18 @@ app.post('/api/positions/buy', async (req, res) => {
     if (!project_id) {
       return res.status(400).json({ error: 'project_id is required' });
     }
+    console.log(`[Server] Buying position for project ${project_id}`);
     const position = await positionService.buyPosition(project_id);
+    console.log(`[Server] Position created:`, position);
 
     // Start AI worker
     try {
+      console.log(`[Server] Starting worker for position ${position.id}...`);
       await workScheduler.startWork(position.id);
+      console.log(`[Server] Worker started successfully`);
     } catch (error: any) {
-      console.error('Failed to start worker:', error.message);
+      console.error('[Server] Failed to start worker:', error.message);
+      console.error('[Server] Error stack:', error.stack);
       // Position is created but worker failed to start
       // User can retry or check notifications
     }

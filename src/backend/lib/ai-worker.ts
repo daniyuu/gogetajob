@@ -22,29 +22,59 @@ export class AIWorker {
   private tokenUsed: number = 0;
   private sessionId: string | null = null;
   private githubToken?: string;
+  private logFile: string;
 
   constructor(options: WorkerOptions) {
     this.options = options;
     this.githubToken = options.githubToken;
+
+    // Create log file path
+    const logDir = path.join(process.cwd(), 'data', 'logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    this.logFile = path.join(logDir, `worker-${options.positionId}.log`);
+
+    // Clear previous log
+    fs.writeFileSync(this.logFile, '');
+  }
+
+  /**
+   * Log message to both console and file
+   */
+  private log(message: string): void {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] ${message}\n`;
+    console.log(message);
+    fs.appendFileSync(this.logFile, line);
   }
 
   /**
    * Start the AI worker
    */
   async start(): Promise<void> {
+    this.log(`[Worker] start() method called`);
     const { workDir, repoUrl, positionId, projectName } = this.options;
 
-    console.log(`[Worker ${positionId}] Starting for ${projectName}`);
+    this.log(`[Worker ${positionId}] Starting for ${projectName}`);
+    this.log(`[Worker ${positionId}] Work directory: ${workDir}`);
+    this.log(`[Worker ${positionId}] Repo URL: ${repoUrl}`);
 
     // Ensure workspace directory
     if (!fs.existsSync(workDir)) {
+      this.log(`[Worker ${positionId}] Creating work directory...`);
       fs.mkdirSync(workDir, { recursive: true });
+    } else {
+      this.log(`[Worker ${positionId}] Work directory exists`);
     }
 
     // Setup repository
+    this.log(`[Worker ${positionId}] Setting up repository...`);
     await this.setupRepository();
+    this.log(`[Worker ${positionId}] Repository setup complete`);
 
     // Start continuous contribution loop
+    this.log(`[Worker ${positionId}] Starting contribution loop...`);
     await this.contributionLoop();
   }
 
@@ -53,7 +83,7 @@ export class AIWorker {
    */
   stop(): void {
     if (this.process && !this.process.killed) {
-      console.log(`[Worker ${this.options.positionId}] Stopping...`);
+      this.log(`[Worker ${this.options.positionId}] Stopping...`);
       this.process.kill('SIGTERM');
 
       setTimeout(() => {
@@ -72,17 +102,17 @@ export class AIWorker {
     const repoDir = path.join(workDir, 'repo');
 
     if (fs.existsSync(repoDir)) {
-      console.log('[Worker] Updating repository...');
+      this.log('[Worker] Updating repository...');
       try {
         execSync('git pull --rebase', { cwd: repoDir, stdio: 'ignore' });
       } catch (error) {
-        console.warn('[Worker] Failed to pull, will re-clone');
+        this.log('[Worker] Failed to pull, will re-clone');
         fs.rmSync(repoDir, { recursive: true, force: true });
       }
     }
 
     if (!fs.existsSync(repoDir)) {
-      console.log('[Worker] Cloning repository...');
+      this.log('[Worker] Cloning repository...');
       execSync(`git clone ${repoUrl} repo`, { cwd: workDir, stdio: 'inherit' });
     }
   }
@@ -233,7 +263,7 @@ Begin working on this issue now.
   }
 
   /**
-   * Execute Claude Code with the prompt
+   * Execute Claude Code with the prompt in a new terminal window
    */
   private async executeClaude(
     prompt: string,
@@ -242,94 +272,60 @@ Begin working on this issue now.
     branchName: string
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      console.log('[Worker] Invoking Claude Code...');
+      this.log('[Worker] Opening Claude Code in new terminal window...');
+      this.log(`[Worker] Work directory: ${cwd}`);
+      this.log(`[Worker] Issue #${issueNumber}: ${branchName}`);
 
-      // Spawn Claude CLI
-      const claude = spawn('claude', [
-        '--dangerously-skip-permissions',
-        '--continue',
-        prompt
+      // Create a batch script to launch the worker
+      const scriptPath = path.join(this.options.workDir, `worker-${this.options.positionId}.bat`);
+
+      // Write prompt to a separate file to avoid escaping issues
+      const promptPath = path.join(this.options.workDir, `prompt-${this.options.positionId}.txt`);
+      fs.writeFileSync(promptPath, prompt, 'utf8');
+
+      // Create batch script content - read prompt from file
+      const batchScript = `@echo off
+title GoGetAJob Worker - Issue #${issueNumber}
+cd /d "${cwd}"
+echo [GoGetAJob Worker] Starting Claude Code session...
+echo [GoGetAJob Worker] Work directory: ${cwd}
+echo [GoGetAJob Worker] Issue: #${issueNumber}
+echo.
+set /p PROMPT=<"${promptPath}"
+claude --dangerously-skip-permissions "%PROMPT%"
+echo.
+echo [GoGetAJob Worker] Claude session ended
+pause
+`;
+
+      // Write batch script
+      fs.writeFileSync(scriptPath, batchScript);
+      this.log(`[Worker] Created batch script: ${scriptPath}`);
+
+      // Launch the batch script in a new window
+      const startCmd = spawn('cmd.exe', [
+        '/c',
+        'start',
+        'cmd.exe',
+        '/k',
+        scriptPath
       ], {
-        cwd,
-        stdio: 'pipe',
+        detached: true,
+        stdio: 'ignore',
         shell: true
       });
 
-      this.process = claude;
+      startCmd.unref();
 
-      let output = '';
-      let errorOutput = '';
+      this.log('[Worker] Terminal window opened - you can now interact with Claude');
+      this.log('[Worker] The worker will wait for Claude to complete...');
 
-      claude.stdout?.on('data', (data) => {
-        const text = data.toString();
-        output += text;
-        process.stdout.write(text);
-
-        // Track token usage
-        const tokenMatch = text.match(/tokens?[:\s]+(\d+)/i);
-        if (tokenMatch) {
-          this.tokenUsed += parseInt(tokenMatch[1]);
-          this.updateTokenCost();
-        }
-
-        // Capture session ID
-        const sessionMatch = text.match(/session[_-]?id[:\s]+([a-f0-9-]+)/i);
-        if (sessionMatch) {
-          this.sessionId = sessionMatch[1];
-        }
-      });
-
-      claude.stderr?.on('data', (data) => {
-        errorOutput += data.toString();
-        process.stderr.write(data);
-      });
-
-      claude.on('exit', async (code) => {
-        console.log(`\n[Worker] Claude exited with code ${code}`);
-        this.process = null;
-
-        if (code === 0) {
-          // Check for changes
-          try {
-            const status = execSync('git status --porcelain', { cwd }).toString();
-
-            if (status.trim()) {
-              console.log('[Worker] Changes detected, committing...');
-
-              // Commit changes
-              execSync('git add .', { cwd });
-              execSync(`git commit -m "Fix issue #${issueNumber}\n\nCloses #${issueNumber}\n\nCo-Authored-By: GoGetAJob <noreply@gogetajob.dev>"`, {
-                cwd,
-                stdio: 'inherit'
-              });
-
-              // Push branch
-              console.log('[Worker] Pushing to remote...');
-              execSync(`git push -u origin ${branchName}`, { cwd, stdio: 'inherit' });
-
-              // Record PR (URL would be constructed, actual PR creation requires GitHub API token)
-              const match = this.options.repoUrl.match(/github\.com\/(.+?)(?:\.git)?$/);
-              if (match) {
-                const repoPath = match[1];
-                const prUrl = `https://github.com/${repoPath}/compare/${branchName}?expand=1`;
-                this.recordPR(prUrl, issueNumber);
-                console.log(`[Worker] PR ready: ${prUrl}`);
-              }
-            } else {
-              console.log('[Worker] No changes made');
-            }
-          } catch (error: any) {
-            console.error('[Worker] Failed to commit/push:', error.message);
-          }
-        }
-
+      // Since we can't monitor the spawned window, we resolve immediately
+      // The user will interact directly in that window
+      setTimeout(() => {
+        this.log('[Worker] Note: Check the CMD window for Claude Code output');
         resolve();
-      });
-
-      claude.on('error', (error) => {
-        console.error('[Worker] Process error:', error);
-        reject(error);
-      });
+      }, 2000);
     });
   }
 

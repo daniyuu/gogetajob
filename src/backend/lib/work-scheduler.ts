@@ -22,15 +22,44 @@ export class WorkScheduler {
   }
 
   /**
+   * Resume all active positions (called on server startup)
+   */
+  async resumeActivePositions(): Promise<void> {
+    console.log('[Scheduler] Resuming active positions...');
+
+    const activePositions = db.prepare(
+      "SELECT * FROM positions WHERE status IN ('buying', 'working')"
+    ).all() as any[];
+
+    console.log(`[Scheduler] Found ${activePositions.length} active positions to resume`);
+
+    for (const position of activePositions) {
+      try {
+        console.log(`[Scheduler] Resuming position ${position.id}...`);
+        await this.startWork(position.id);
+      } catch (error: any) {
+        console.error(`[Scheduler] Failed to resume position ${position.id}:`, error.message);
+      }
+    }
+
+    console.log('[Scheduler] Resume complete');
+  }
+
+  /**
    * Start working on a position
    */
   async startWork(positionId: number): Promise<void> {
+    console.log(`[Scheduler] startWork() called for position ${positionId}`);
+
     const position = this.getPosition(positionId);
     if (!position) {
       throw new Error('Position not found');
     }
+    console.log(`[Scheduler] Found position:`, position);
 
+    // Check if already working in memory (not just database)
     if (this.sessions.has(positionId)) {
+      console.log(`[Scheduler] Already have active session for position ${positionId}`);
       throw new Error('Already working on this position');
     }
 
@@ -42,13 +71,20 @@ export class WorkScheduler {
     if (!project) {
       throw new Error('Project not found');
     }
+    console.log(`[Scheduler] Found project:`, project);
 
-    // Update position status
-    db.prepare('UPDATE positions SET status = ?, started_at = ? WHERE id = ?')
-      .run('working', new Date().toISOString(), positionId);
+    // Update position status to 'working' if it's not already
+    if (position.status !== 'working') {
+      db.prepare('UPDATE positions SET status = ?, started_at = ? WHERE id = ?')
+        .run('working', new Date().toISOString(), positionId);
+      console.log(`[Scheduler] Updated position status to 'working'`);
+    } else {
+      console.log(`[Scheduler] Position already has 'working' status, resuming...`);
+    }
 
     // Create work directory
     const workDir = path.join(process.cwd(), 'data', 'workspaces', `project-${project.id}`);
+    console.log(`[Scheduler] Work directory: ${workDir}`);
 
     // Create AI worker
     const worker = new AIWorker({
@@ -58,6 +94,7 @@ export class WorkScheduler {
       projectName: project.name,
       githubToken: this.githubToken
     });
+    console.log(`[Scheduler] Created AIWorker instance`);
 
     // Create session
     const session: WorkSession = {
@@ -68,8 +105,10 @@ export class WorkScheduler {
     };
 
     this.sessions.set(positionId, session);
+    console.log(`[Scheduler] Session created and stored`);
 
     // Start worker in background
+    console.log(`[Scheduler] Calling worker.start()...`);
     worker.start().catch(error => {
       console.error(`[Scheduler] Worker ${positionId} failed:`, error);
       session.status = 'error';
