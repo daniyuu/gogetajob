@@ -5,8 +5,8 @@ import { runMigrations } from './lib/migrations';
 import { loadConfig } from './lib/config';
 import { ProjectService } from './lib/project-service';
 import { PositionService } from './lib/position-service';
-import { WorkScheduler } from './lib/work-scheduler';
 import { BackgroundDaemon } from './lib/daemon';
+import { TaskScheduler } from './lib/task-scheduler';
 
 const app = express();
 const config = loadConfig();
@@ -17,16 +17,12 @@ runMigrations();
 // Services
 const projectService = new ProjectService(config.githubToken || undefined);
 const positionService = new PositionService(config.githubToken || undefined);
-const workScheduler = new WorkScheduler();
 const daemon = new BackgroundDaemon();
+const taskScheduler = new TaskScheduler();
 
-// Start background daemon
+// Start background services
 daemon.start();
-
-// Resume active positions
-workScheduler.resumeActivePositions().catch(error => {
-  console.error('Failed to resume active positions:', error);
-});
+taskScheduler.start();
 
 // Middleware
 app.use(cors());
@@ -106,22 +102,13 @@ app.post('/api/positions/buy', async (req, res) => {
     }
     console.log(`[Server] Buying position for project ${project_id}`);
     const position = await positionService.buyPosition(project_id);
-    console.log(`[Server] Position created:`, position);
-
-    // Start AI worker
-    try {
-      console.log(`[Server] Starting worker for position ${position.id}...`);
-      await workScheduler.startWork(position.id);
-      console.log(`[Server] Worker started successfully`);
-    } catch (error: any) {
-      console.error('[Server] Failed to start worker:', error.message);
-      console.error('[Server] Error stack:', error.stack);
-      // Position is created but worker failed to start
-      // User can retry or check notifications
-    }
+    console.log(`[Server] Position created with ID ${position.id}`);
+    console.log(`[Server] Root exploration task created - TaskScheduler will pick it up`);
 
     res.json(position);
   } catch (error: any) {
+    console.error('[Server] Failed to buy position:', error.message);
+    console.error('[Server] Error stack:', error.stack);
     res.status(500).json({ error: error.message });
   }
 });
@@ -130,10 +117,7 @@ app.post('/api/positions/:id/sell', async (req, res) => {
   try {
     const positionId = parseInt(req.params.id);
 
-    // Stop AI worker first
-    await workScheduler.stopWork(positionId);
-
-    // Then sell the position
+    // Sell the position
     positionService.sellPosition(positionId);
 
     res.json({ success: true });
@@ -195,46 +179,18 @@ app.post('/api/config', (req, res) => {
   }
 });
 
-// Work scheduler status
-app.get('/api/workers', (req, res) => {
-  try {
-    const sessions = workScheduler.getActiveSessions();
-    res.json(sessions);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/workers/:positionId/start', async (req, res) => {
-  try {
-    await workScheduler.startWork(parseInt(req.params.positionId));
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/workers/:positionId/stop', async (req, res) => {
-  try {
-    await workScheduler.stopWork(parseInt(req.params.positionId));
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   daemon.stop();
-  await workScheduler.stopAll();
+  taskScheduler.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   daemon.stop();
-  await workScheduler.stopAll();
+  taskScheduler.stop();
   process.exit(0);
 });
 

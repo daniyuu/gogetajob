@@ -47,6 +47,7 @@ export function runMigrations() {
       claude_session_id TEXT,
       buy_price INTEGER DEFAULT 0,
       token_cost INTEGER DEFAULT 0,
+      max_parallel_tasks INTEGER DEFAULT 1,
       started_at TEXT DEFAULT (datetime('now')),
       stopped_at TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -80,6 +81,32 @@ export function runMigrations() {
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE
     )
+  `);
+
+  // Create tasks table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position_id INTEGER NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT CHECK(status IN ('pending', 'working', 'completed', 'failed', 'blocked')) DEFAULT 'pending',
+      worktree_path TEXT,
+      completion_promise TEXT DEFAULT 'TASK_COMPLETE',
+      created_by_task_id INTEGER,
+      assigned_agent_session_id TEXT,
+      started_at TEXT,
+      completed_at TEXT,
+      error_message TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by_task_id) REFERENCES tasks(id)
+    )
+  `);
+
+  // Create index on tasks for efficient polling
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_status_position
+    ON tasks(status, position_id, created_at)
   `);
 
   console.log('✅ Database migrations completed');
