@@ -109,22 +109,13 @@ app.post('/api/positions/buy', async (req, res) => {
     }
     console.log(`[Server] Buying position for project ${project_id}`);
     const position = await positionService.buyPosition(project_id);
-    console.log(`[Server] Position created:`, position);
-
-    // Start AI worker
-    try {
-      console.log(`[Server] Starting worker for position ${position.id}...`);
-      await workScheduler.startWork(position.id);
-      console.log(`[Server] Worker started successfully`);
-    } catch (error: any) {
-      console.error('[Server] Failed to start worker:', error.message);
-      console.error('[Server] Error stack:', error.stack);
-      // Position is created but worker failed to start
-      // User can retry or check notifications
-    }
+    console.log(`[Server] Position created with ID ${position.id}`);
+    console.log(`[Server] Root exploration task created - TaskScheduler will pick it up`);
 
     res.json(position);
   } catch (error: any) {
+    console.error('[Server] Failed to buy position:', error.message);
+    console.error('[Server] Error stack:', error.stack);
     res.status(500).json({ error: error.message });
   }
 });
