@@ -1,8 +1,34 @@
 node_modules/
 dist/
+temp-dist/
 public/js/bundle.js
+public/js/bundle.js.map
+public/js/*.map
 *.log
+server.log
 .DS_Store
+
+# Data directory
 data/*.db
 data/*.db-journal
+data/*.db-*
+data/*.backup
+data/workspaces/
+data/config.json
+
+# Environment and secrets
 .env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Temporary files
+*.tmp
+fix-*.js
