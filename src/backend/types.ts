@@ -47,7 +47,7 @@ export interface PullRequest {
 export interface Notification {
   id: number;
   position_id: number;
-  type: 'pr_merged' | 'pr_review' | 'error' | 'milestone';
+  type: 'pr_merged' | 'pr_closed' | 'pr_review' | 'error' | 'milestone';
   message: string;
   is_read: boolean;
   created_at: string;
