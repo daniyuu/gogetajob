@@ -7,6 +7,7 @@ import { ProjectService } from './lib/project-service';
 import { PositionService } from './lib/position-service';
 import { WorkScheduler } from './lib/work-scheduler';
 import { BackgroundDaemon } from './lib/daemon';
+import { TaskScheduler } from './lib/task-scheduler';
 
 const app = express();
 const config = loadConfig();
@@ -19,9 +20,11 @@ const projectService = new ProjectService(config.githubToken || undefined);
 const positionService = new PositionService(config.githubToken || undefined);
 const workScheduler = new WorkScheduler();
 const daemon = new BackgroundDaemon();
+const taskScheduler = new TaskScheduler();
 
-// Start background daemon
+// Start background services
 daemon.start();
+taskScheduler.start();
 
 // Resume active positions
 workScheduler.resumeActivePositions().catch(error => {
@@ -227,6 +230,7 @@ app.post('/api/workers/:positionId/stop', async (req, res) => {
 process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   daemon.stop();
+  taskScheduler.stop();
   await workScheduler.stopAll();
   process.exit(0);
 });
@@ -234,6 +238,7 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   daemon.stop();
+  taskScheduler.stop();
   await workScheduler.stopAll();
   process.exit(0);
 });
