@@ -16,6 +16,10 @@ data/*.backup
 data/workspaces/
 data/config.json
 
+# GoGetAJob runtime files
+.gogetajob/temp/
+.claude/worktrees/
+
 # Environment and secrets
 .env
 .env.local

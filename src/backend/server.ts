@@ -5,7 +5,6 @@ import { runMigrations } from './lib/migrations';
 import { loadConfig } from './lib/config';
 import { ProjectService } from './lib/project-service';
 import { PositionService } from './lib/position-service';
-import { WorkScheduler } from './lib/work-scheduler';
 import { BackgroundDaemon } from './lib/daemon';
 import { TaskScheduler } from './lib/task-scheduler';
 
@@ -18,18 +17,12 @@ runMigrations();
 // Services
 const projectService = new ProjectService(config.githubToken || undefined);
 const positionService = new PositionService(config.githubToken || undefined);
-const workScheduler = new WorkScheduler();
 const daemon = new BackgroundDaemon();
 const taskScheduler = new TaskScheduler();
 
 // Start background services
 daemon.start();
 taskScheduler.start();
-
-// Resume active positions
-workScheduler.resumeActivePositions().catch(error => {
-  console.error('Failed to resume active positions:', error);
-});
 
 // Middleware
 app.use(cors());
@@ -124,10 +117,7 @@ app.post('/api/positions/:id/sell', async (req, res) => {
   try {
     const positionId = parseInt(req.params.id);
 
-    // Stop AI worker first
-    await workScheduler.stopWork(positionId);
-
-    // Then sell the position
+    // Sell the position
     positionService.sellPosition(positionId);
 
     res.json({ success: true });
@@ -189,40 +179,11 @@ app.post('/api/config', (req, res) => {
   }
 });
 
-// Work scheduler status
-app.get('/api/workers', (req, res) => {
-  try {
-    const sessions = workScheduler.getActiveSessions();
-    res.json(sessions);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/workers/:positionId/start', async (req, res) => {
-  try {
-    await workScheduler.startWork(parseInt(req.params.positionId));
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/workers/:positionId/stop', async (req, res) => {
-  try {
-    await workScheduler.stopWork(parseInt(req.params.positionId));
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   daemon.stop();
   taskScheduler.stop();
-  await workScheduler.stopAll();
   process.exit(0);
 });
 
@@ -230,7 +191,6 @@ process.on('SIGTERM', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   daemon.stop();
   taskScheduler.stop();
-  await workScheduler.stopAll();
   process.exit(0);
 });
 
