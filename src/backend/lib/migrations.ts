@@ -75,7 +75,7 @@ export function runMigrations() {
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       position_id INTEGER NOT NULL,
-      type TEXT CHECK(type IN ('pr_merged', 'pr_review', 'error', 'milestone')) NOT NULL,
+      type TEXT CHECK(type IN ('pr_merged', 'pr_closed', 'pr_review', 'error', 'milestone')) NOT NULL,
       message TEXT NOT NULL,
       is_read BOOLEAN DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
