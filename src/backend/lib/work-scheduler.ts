@@ -13,10 +13,12 @@ interface WorkSession {
 export class WorkScheduler {
   private sessions: Map<number, WorkSession> = new Map();
   private maxWorkers: number;
+  private githubToken?: string;
 
   constructor() {
     const config = loadConfig();
     this.maxWorkers = config.maxParallelWorkers;
+    this.githubToken = config.githubToken || undefined;
   }
 
   /**
@@ -53,7 +55,8 @@ export class WorkScheduler {
       repoUrl: project.repo_url,
       workDir,
       positionId,
-      projectName: project.name
+      projectName: project.name,
+      githubToken: this.githubToken
     });
 
     // Create session

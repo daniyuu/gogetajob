@@ -13,6 +13,7 @@ interface WorkerOptions {
   workDir: string;
   positionId: number;
   projectName: string;
+  githubToken?: string;
 }
 
 export class AIWorker {
@@ -20,9 +21,11 @@ export class AIWorker {
   private process: ChildProcess | null = null;
   private tokenUsed: number = 0;
   private sessionId: string | null = null;
+  private githubToken?: string;
 
   constructor(options: WorkerOptions) {
     this.options = options;
+    this.githubToken = options.githubToken;
   }
 
   /**
@@ -127,16 +130,24 @@ export class AIWorker {
       const url = `https://api.github.com/repos/${owner}/${repo}/issues?labels=${encodeURIComponent(label)}&state=open&per_page=10`;
 
       try {
-        const response = await fetch(url, {
-          headers: {
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'GoGetAJob-Worker/1.0'
-          }
-        });
+        const headers: Record<string, string> = {
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'GoGetAJob-Worker/1.0'
+        };
 
-        if (!response.ok) continue;
+        if (this.githubToken) {
+          headers['Authorization'] = `Bearer ${this.githubToken}`;
+        }
+
+        const response = await fetch(url, { headers });
+
+        if (!response.ok) {
+          console.log(`[Worker] GitHub API returned ${response.status} for label "${label}"`);
+          continue;
+        }
 
         const issues = await response.json() as any[];
+        console.log(`[Worker] Found ${issues.length} issues with label "${label}"`);
         if (issues.length > 0) {
           // Return first unassigned issue
           return issues.find((i: any) => !i.assignee) || issues[0];
