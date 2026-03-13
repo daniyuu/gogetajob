@@ -259,6 +259,1035 @@ When you complete meaningful work, output: <promise>TASK_COMPLETE</promise>
 
 ---
 
+## Breakdown
+
+### Milestones
+
+- [ ] Milestone 1: Database schema and task model
+- [ ] Milestone 2: TaskScheduler with worktree management
+- [ ] Milestone 3: Agent spawning with ralph-loop
+- [ ] Milestone 4: Task completion detection and communication
+- [ ] Milestone 5: Integration and UI updates
+- [ ] Milestone 6: Testing and dogfooding
+
+---
+
+### Task 1: Add tasks table to database
+
+**Files:**
+- Modify: `src/backend/lib/migrations.ts`
+
+**Step 1: Add tasks table migration**
+
+Add after the notifications table creation:
+
+```typescript
+// Create tasks table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT CHECK(status IN ('pending', 'working', 'completed', 'failed', 'blocked')) DEFAULT 'pending',
+    worktree_path TEXT,
+    completion_promise TEXT DEFAULT 'TASK_COMPLETE',
+    created_by_task_id INTEGER,
+    assigned_agent_session_id TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    error_message TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_task_id) REFERENCES tasks(id)
+  )
+`);
+
+// Create index for task queries
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_tasks_position_status
+  ON tasks(position_id, status)
+`);
+```
+
+**Step 2: Add max_parallel_tasks to positions**
+
+Add after positions table creation:
+
+```typescript
+// Add max_parallel_tasks column if not exists
+db.exec(`
+  ALTER TABLE positions ADD COLUMN max_parallel_tasks INTEGER DEFAULT 1
+`).catch(() => {
+  // Column might already exist
+});
+```
+
+**Step 3: Test migration**
+
+Run: `npx ts-node src/backend/server.ts`
+Expected: Should see "✅ Database migrations completed" without errors
+
+**Step 4: Verify schema**
+
+Run:
+```bash
+node -e "const db = require('better-sqlite3')('data/gogetajob.db'); console.log(db.prepare('SELECT sql FROM sqlite_master WHERE name=?').get('tasks'));"
+```
+Expected: Shows tasks table schema
+
+**Step 5: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 2: Create TaskScheduler class
+
+**Files:**
+- Create: `src/backend/lib/task-scheduler.ts`
+
+**Step 1: Create TaskScheduler skeleton**
+
+```typescript
+import { db } from './database';
+import { spawn, ChildProcess } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+
+interface Task {
+  id: number;
+  position_id: number;
+  description: string;
+  status: string;
+  worktree_path: string | null;
+  completion_promise: string;
+  created_by_task_id: number | null;
+}
+
+interface AgentSession {
+  taskId: number;
+  sessionId: string;
+  process: ChildProcess;
+  worktreePath: string;
+  startedAt: Date;
+}
+
+export class TaskScheduler {
+  private activeSessions: Map<number, AgentSession> = new Map();
+  private pollInterval: NodeJS.Timeout | null = null;
+
+  constructor() {}
+
+  /**
+   * Start the task scheduler
+   */
+  start(): void {
+    console.log('[TaskScheduler] Starting...');
+
+    // Poll for pending tasks every 10 seconds
+    this.pollInterval = setInterval(() => {
+      this.pollAndSchedule().catch(error => {
+        console.error('[TaskScheduler] Error polling:', error);
+      });
+    }, 10000);
+
+    // Initial poll
+    this.pollAndSchedule().catch(error => {
+      console.error('[TaskScheduler] Error in initial poll:', error);
+    });
+
+    console.log('[TaskScheduler] Started');
+  }
+
+  /**
+   * Stop the scheduler
+   */
+  stop(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+
+    // Stop all active agents
+    for (const session of this.activeSessions.values()) {
+      if (session.process && !session.process.killed) {
+        session.process.kill('SIGTERM');
+      }
+    }
+
+    this.activeSessions.clear();
+    console.log('[TaskScheduler] Stopped');
+  }
+
+  /**
+   * Poll for pending tasks and schedule them
+   */
+  private async pollAndSchedule(): Promise<void> {
+    // TODO: Implement in next step
+  }
+}
+```
+
+**Step 2: Commit skeleton**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 3: Implement task polling logic
+
+**Files:**
+- Modify: `src/backend/lib/task-scheduler.ts`
+
+**Step 1: Implement pollAndSchedule method**
+
+Replace the TODO with:
+
+```typescript
+private async pollAndSchedule(): Promise<void> {
+  // Get all positions with pending tasks
+  const positionsWithTasks = db.prepare(`
+    SELECT DISTINCT p.id, p.max_parallel_tasks
+    FROM positions p
+    JOIN tasks t ON t.position_id = p.id
+    WHERE p.status IN ('working', 'buying')
+      AND t.status = 'pending'
+  `).all() as Array<{ id: number; max_parallel_tasks: number }>;
+
+  for (const position of positionsWithTasks) {
+    // Count currently working tasks for this position
+    const workingCount = Array.from(this.activeSessions.values())
+      .filter(s => {
+        const task = this.getTask(s.taskId);
+        return task?.position_id === position.id;
+      }).length;
+
+    // Calculate available slots
+    const availableSlots = position.max_parallel_tasks - workingCount;
+
+    if (availableSlots > 0) {
+      // Get pending tasks for this position
+      const pendingTasks = db.prepare(`
+        SELECT * FROM tasks
+        WHERE position_id = ?
+          AND status = 'pending'
+        ORDER BY created_at ASC
+        LIMIT ?
+      `).all(position.id, availableSlots) as Task[];
+
+      // Schedule each pending task
+      for (const task of pendingTasks) {
+        await this.scheduleTask(task);
+      }
+    }
+  }
+}
+
+/**
+ * Get task by ID
+ */
+private getTask(taskId: number): Task | undefined {
+  return db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Task | undefined;
+}
+```
+
+**Step 2: Test polling logic**
+
+Run: `npx ts-node src/backend/server.ts`
+Expected: TaskScheduler starts without errors
+
+**Step 3: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 4: Implement worktree management
+
+**Files:**
+- Modify: `src/backend/lib/task-scheduler.ts`
+
+**Step 1: Add worktree helper methods**
+
+```typescript
+/**
+ * Get or create main repo for a position
+ */
+private async ensureMainRepo(positionId: number): Promise<string> {
+  const position = db.prepare('SELECT * FROM positions WHERE id = ?').get(positionId) as any;
+  if (!position) throw new Error('Position not found');
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(position.project_id) as any;
+  if (!project) throw new Error('Project not found');
+
+  const mainRepoPath = path.join(
+    process.cwd(),
+    'data',
+    'workspaces',
+    `project-${project.id}`,
+    'main-repo'
+  );
+
+  // Clone if doesn't exist
+  if (!fs.existsSync(mainRepoPath)) {
+    const workspaceDir = path.dirname(mainRepoPath);
+    fs.mkdirSync(workspaceDir, { recursive: true });
+
+    console.log(`[TaskScheduler] Cloning ${project.repo_url}...`);
+    execSync(`git clone ${project.repo_url} main-repo`, {
+      cwd: workspaceDir,
+      stdio: 'inherit'
+    });
+  } else {
+    // Update existing repo
+    try {
+      execSync('git fetch origin', { cwd: mainRepoPath, stdio: 'ignore' });
+    } catch (error) {
+      console.warn('[TaskScheduler] Failed to fetch, continuing...');
+    }
+  }
+
+  return mainRepoPath;
+}
+
+/**
+ * Create worktree for a task
+ */
+private async createWorktree(task: Task, mainRepoPath: string): Promise<string> {
+  const workspacesDir = path.dirname(mainRepoPath);
+  const worktreeName = `task-${task.id}-${this.sanitizeBranchName(task.description)}`;
+  const worktreePath = path.join(workspacesDir, worktreeName);
+
+  // Create worktree
+  const branchName = `gogetajob-task-${task.id}`;
+
+  try {
+    execSync(`git worktree add ${worktreeName} -b ${branchName}`, {
+      cwd: mainRepoPath,
+      stdio: 'inherit'
+    });
+    console.log(`[TaskScheduler] Created worktree: ${worktreePath}`);
+  } catch (error: any) {
+    // Branch might exist, try without -b
+    try {
+      execSync(`git worktree add ${worktreeName} ${branchName}`, {
+        cwd: mainRepoPath,
+        stdio: 'inherit'
+      });
+    } catch {
+      throw new Error(`Failed to create worktree: ${error.message}`);
+    }
+  }
+
+  // Update task with worktree path
+  db.prepare('UPDATE tasks SET worktree_path = ? WHERE id = ?')
+    .run(worktreePath, task.id);
+
+  return worktreePath;
+}
+
+/**
+ * Sanitize description for use in branch/directory name
+ */
+private sanitizeBranchName(description: string): string {
+  return description
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 50);
+}
+```
+
+**Step 2: Test worktree creation**
+
+Create a test task manually:
+```bash
+node -e "const db = require('better-sqlite3')('data/gogetajob.db'); db.prepare('INSERT INTO tasks (position_id, description) VALUES (?, ?)').run(1, 'Test task');"
+```
+
+Run server and verify worktree is created in `data/workspaces/project-X/`
+
+**Step 3: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 5: Implement agent spawning with ralph-loop
+
+**Files:**
+- Modify: `src/backend/lib/task-scheduler.ts`
+
+**Step 1: Implement scheduleTask method**
+
+```typescript
+/**
+ * Schedule a task by spawning an agent
+ */
+private async scheduleTask(task: Task): Promise<void> {
+  console.log(`[TaskScheduler] Scheduling task ${task.id}: ${task.description}`);
+
+  try {
+    // Get position and project info
+    const position = db.prepare('SELECT * FROM positions WHERE id = ?').get(task.position_id) as any;
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(position.project_id) as any;
+
+    // Ensure main repo exists
+    const mainRepoPath = await this.ensureMainRepo(task.position_id);
+
+    // Create worktree for this task
+    const worktreePath = await this.createWorktree(task, mainRepoPath);
+
+    // Build ralph-loop prompt
+    const prompt = this.buildPrompt(task, project);
+
+    // Write prompt to file
+    const promptPath = path.join(path.dirname(mainRepoPath), `prompt-task-${task.id}.txt`);
+    fs.writeFileSync(promptPath, prompt, 'utf8');
+
+    // Create batch script
+    const batchScript = this.createBatchScript(task, worktreePath, promptPath);
+    const scriptPath = path.join(path.dirname(mainRepoPath), `task-${task.id}.bat`);
+    fs.writeFileSync(scriptPath, batchScript);
+
+    // Spawn agent in new CMD window
+    const agentProcess = spawn('cmd.exe', [
+      '/c',
+      'start',
+      'cmd.exe',
+      '/k',
+      scriptPath
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      shell: true
+    });
+
+    agentProcess.unref();
+
+    // Update task status
+    db.prepare('UPDATE tasks SET status = ?, started_at = ? WHERE id = ?')
+      .run('working', new Date().toISOString(), task.id);
+
+    // Record session
+    const session: AgentSession = {
+      taskId: task.id,
+      sessionId: `task-${task.id}-${Date.now()}`,
+      process: agentProcess,
+      worktreePath,
+      startedAt: new Date()
+    };
+
+    this.activeSessions.set(task.id, session);
+
+    console.log(`[TaskScheduler] Agent spawned for task ${task.id}`);
+  } catch (error: any) {
+    console.error(`[TaskScheduler] Failed to schedule task ${task.id}:`, error);
+
+    // Mark task as failed
+    db.prepare('UPDATE tasks SET status = ?, error_message = ? WHERE id = ?')
+      .run('failed', error.message, task.id);
+  }
+}
+
+/**
+ * Build ralph-loop prompt for a task
+ */
+private buildPrompt(task: Task, project: any): string {
+  return `You are an autonomous AI agent contributing to the open source project: ${project.name}
+
+Repository: ${project.repo_url}
+
+Your task: ${task.description}
+
+You have full autonomy to:
+- Explore the codebase using /codebase-research
+- Plan your approach using /brainstorming
+- Create sub-tasks if needed by inserting to database:
+  node -e "const db = require('better-sqlite3')('${path.join(process.cwd(), 'data', 'gogetajob.db')}'); db.prepare('INSERT INTO tasks (position_id, description, created_by_task_id) VALUES (?, ?, ?)').run(${task.position_id}, 'Task description', ${task.id});"
+- Implement changes and test thoroughly
+- Commit your work using /codeblend-commit
+
+When you have completed meaningful work (created commits, PR ready), output:
+<promise>${task.completion_promise}</promise>
+
+Work with persistence and iterate until success. Good luck!
+`.trim();
+}
+
+/**
+ * Create batch script to launch agent
+ */
+private createBatchScript(task: Task, worktreePath: string, promptPath: string): string {
+  return `@echo off
+title GoGetAJob Agent - Task ${task.id}
+cd /d "${worktreePath}"
+echo ===============================================
+echo GoGetAJob Agent - Task ${task.id}
+echo ===============================================
+echo Task: ${task.description}
+echo Working directory: ${worktreePath}
+echo.
+echo Starting agent with ralph-loop...
+echo.
+set /p PROMPT=<"${promptPath}"
+claude --dangerously-skip-permissions --ralph-loop "%PROMPT%" --max-iterations 50 --completion-promise "${task.completion_promise}"
+echo.
+echo ===============================================
+echo Agent session ended
+echo ===============================================
+pause
+`;
+}
+```
+
+**Step 2: Test agent spawning**
+
+Create a test task and verify window opens with proper ralph-loop command
+
+**Step 3: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 6: Implement task completion detection
+
+**Files:**
+- Modify: `src/backend/lib/task-scheduler.ts`
+
+**Step 1: Add completion monitoring**
+
+```typescript
+/**
+ * Monitor tasks for completion
+ */
+private async monitorCompletions(): Promise<void> {
+  const workingTasks = db.prepare(`
+    SELECT * FROM tasks WHERE status = 'working'
+  `).all() as Task[];
+
+  for (const task of workingTasks) {
+    await this.checkTaskCompletion(task);
+  }
+}
+
+/**
+ * Check if a task has completed
+ */
+private async checkTaskCompletion(task: Task): Promise<void> {
+  if (!task.worktree_path || !fs.existsSync(task.worktree_path)) {
+    return;
+  }
+
+  try {
+    // Check for new commits
+    const commits = execSync('git log --oneline -1', {
+      cwd: task.worktree_path,
+      encoding: 'utf8'
+    }).trim();
+
+    // Check if we have a session for this task
+    const session = this.activeSessions.get(task.id);
+
+    // If no active session but has commits, assume completed
+    if (!session && commits) {
+      console.log(`[TaskScheduler] Task ${task.id} appears completed (has commits, no active session)`);
+      this.completeTask(task.id);
+    }
+
+    // TODO: Also check for completion promise in output (need to capture it)
+  } catch (error) {
+    // Ignore errors, task might still be starting
+  }
+}
+
+/**
+ * Mark task as completed
+ */
+private completeTask(taskId: number): void {
+  db.prepare('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?')
+    .run('completed', new Date().toISOString(), taskId);
+
+  // Remove from active sessions
+  this.activeSessions.delete(taskId);
+
+  console.log(`[TaskScheduler] Task ${taskId} marked as completed`);
+
+  // Check if new sub-tasks were created
+  this.checkForNewTasks(taskId);
+}
+
+/**
+ * Check if a task created sub-tasks
+ */
+private checkForNewTasks(parentTaskId: number): void {
+  const newTasks = db.prepare(`
+    SELECT * FROM tasks
+    WHERE created_by_task_id = ?
+      AND status = 'pending'
+  `).all(parentTaskId) as Task[];
+
+  if (newTasks.length > 0) {
+    console.log(`[TaskScheduler] Task ${parentTaskId} created ${newTasks.length} sub-tasks`);
+  }
+}
+```
+
+**Step 2: Update start() to include monitoring**
+
+In the `start()` method, add monitoring to the poll interval:
+
+```typescript
+this.pollInterval = setInterval(() => {
+  this.pollAndSchedule().catch(error => {
+    console.error('[TaskScheduler] Error polling:', error);
+  });
+
+  this.monitorCompletions().catch(error => {
+    console.error('[TaskScheduler] Error monitoring:', error);
+  });
+}, 10000);
+```
+
+**Step 3: Test completion detection**
+
+Create a task, let it complete, verify it's marked as completed
+
+**Step 4: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 7: Update buy position flow
+
+**Files:**
+- Modify: `src/backend/lib/position-service.ts`
+- Modify: `src/backend/server.ts`
+
+**Step 1: Modify buyPosition to create root task**
+
+In `position-service.ts`, update `buyPosition` method:
+
+```typescript
+async buyPosition(projectId: number): Promise<any> {
+  // Check if already have active position
+  const existing = db.prepare(
+    'SELECT * FROM positions WHERE project_id = ? AND status NOT IN (?, ?)'
+  ).get(projectId, 'stopped', 'error');
+
+  if (existing) {
+    throw new Error('Already have an active position for this project');
+  }
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  if (!project) {
+    throw new Error('Project not found');
+  }
+
+  const now = new Date().toISOString();
+  const price = (project as any).stars + (project as any).forks * 2;
+
+  // Create position
+  const result = db.prepare(`
+    INSERT INTO positions (project_id, status, buy_price, started_at)
+    VALUES (?, 'buying', ?, ?)
+  `).run(projectId, price, now);
+
+  const positionId = result.lastInsertRowid as number;
+
+  // Create root task
+  db.prepare(`
+    INSERT INTO tasks (position_id, description, status)
+    VALUES (?, ?, 'pending')
+  `).run(
+    positionId,
+    `Contribute to this repository: ${(project as any).name}`
+  );
+
+  console.log(`[PositionService] Created root task for position ${positionId}`);
+
+  // Update position status to working
+  db.prepare('UPDATE positions SET status = ? WHERE id = ?')
+    .run('working', positionId);
+
+  return db.prepare('SELECT * FROM positions WHERE id = ?').get(positionId);
+}
+```
+
+**Step 2: Update server.ts to use TaskScheduler**
+
+Replace WorkScheduler with TaskScheduler:
+
+```typescript
+import { TaskScheduler } from './lib/task-scheduler';
+
+const taskScheduler = new TaskScheduler();
+
+// Start task scheduler
+taskScheduler.start();
+
+// Remove old workScheduler.startWork() call in buy endpoint
+// TaskScheduler will automatically pick up the task
+```
+
+**Step 3: Test buy flow**
+
+1. Start server
+2. Buy a position via API
+3. Verify root task is created in DB
+4. Verify TaskScheduler picks it up and spawns agent
+
+**Step 4: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 8: Add task dashboard to UI
+
+**Files:**
+- Create: `src/frontend/pages/TasksPage.tsx`
+- Modify: `src/frontend/App.tsx`
+- Modify: `src/frontend/api.ts`
+
+**Step 1: Add tasks API methods**
+
+In `api.ts`:
+
+```typescript
+export interface Task {
+  id: number;
+  position_id: number;
+  description: string;
+  status: 'pending' | 'working' | 'completed' | 'failed' | 'blocked';
+  worktree_path: string | null;
+  created_by_task_id: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+// In api object:
+async getTasks(positionId?: number): Promise<Task[]> {
+  const url = positionId
+    ? `${API_BASE}/tasks?position_id=${positionId}`
+    : `${API_BASE}/tasks`;
+  const res = await fetch(url);
+  return res.json();
+}
+```
+
+**Step 2: Add tasks API endpoint**
+
+In `server.ts`:
+
+```typescript
+app.get('/api/tasks', (req, res) => {
+  try {
+    const positionId = req.query.position_id;
+    let query = 'SELECT * FROM tasks';
+    const params: any[] = [];
+
+    if (positionId) {
+      query += ' WHERE position_id = ?';
+      params.push(parseInt(positionId as string));
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const tasks = db.prepare(query).all(...params);
+    res.json(tasks);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+**Step 3: Create TasksPage component**
+
+Create `src/frontend/pages/TasksPage.tsx`:
+
+```tsx
+import React, { useEffect, useState } from 'react';
+import { api, type Task } from '../api';
+
+export function TasksPage() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadTasks();
+    // Poll every 5 seconds
+    const interval = setInterval(loadTasks, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function loadTasks() {
+    try {
+      const data = await api.getTasks();
+      setTasks(data);
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return '#2ecc71';
+      case 'working': return '#3498db';
+      case 'failed': return '#e74c3c';
+      case 'blocked': return '#f39c12';
+      default: return '#95a5a6';
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">加载中...</div>;
+  }
+
+  return (
+    <div className="card">
+      <h2 className="card-title">任务列表</h2>
+      {tasks.length === 0 ? (
+        <div className="loading">暂无任务</div>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>描述</th>
+              <th>状态</th>
+              <th>开始时间</th>
+              <th>完成时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.map(task => (
+              <tr key={task.id}>
+                <td>#{task.id}</td>
+                <td>
+                  {task.created_by_task_id && (
+                    <span style={{ color: '#888', marginRight: '8px' }}>
+                      ↳ (from #{task.created_by_task_id})
+                    </span>
+                  )}
+                  {task.description}
+                </td>
+                <td>
+                  <span style={{
+                    color: getStatusColor(task.status),
+                    fontWeight: 'bold'
+                  }}>
+                    {task.status}
+                  </span>
+                </td>
+                <td>
+                  {task.started_at
+                    ? new Date(task.started_at).toLocaleString()
+                    : '-'
+                  }
+                </td>
+                <td>
+                  {task.completed_at
+                    ? new Date(task.completed_at).toLocaleString()
+                    : '-'
+                  }
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+```
+
+**Step 4: Add route to App.tsx**
+
+Add TasksPage to navigation
+
+**Step 5: Test UI**
+
+Open browser, verify tasks page shows tasks in real-time
+
+**Step 6: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 9: End-to-end testing
+
+**Files:**
+- None (testing only)
+
+**Step 1: Clean test environment**
+
+```bash
+# Clean database
+node -e "const db = require('better-sqlite3')('data/gogetajob.db'); db.prepare('DELETE FROM tasks').run(); db.prepare('DELETE FROM positions').run();"
+
+# Clean workspaces
+rm -rf data/workspaces/*
+```
+
+**Step 2: Test case 1 - Root task creation**
+
+1. Start server
+2. Buy position for gogetajob
+3. Verify root task created in DB
+4. Verify agent window opens
+
+**Step 3: Test case 2 - Agent creates sub-tasks**
+
+1. In agent window, manually insert a sub-task:
+```bash
+node -e "const db = require('better-sqlite3')('../../data/gogetajob.db'); db.prepare('INSERT INTO tasks (position_id, description, created_by_task_id) VALUES (1, \"Test sub-task\", 1)').run();"
+```
+2. Wait for scheduler to poll
+3. Verify new agent window opens for sub-task
+
+**Step 4: Test case 3 - Serial execution**
+
+1. Create 3 tasks with max_parallel_tasks=1
+2. Verify only 1 agent runs at a time
+3. Verify next agent starts after previous completes
+
+**Step 5: Test case 4 - Task completion**
+
+1. In agent window, create a commit
+2. Type: `<promise>TASK_COMPLETE</promise>`
+3. Exit agent
+4. Verify task marked as completed in DB
+
+**Step 6: Document test results**
+
+Add results to devlog in README.md
+
+---
+
+### Task 10: Remove old Worker code
+
+**Files:**
+- Delete: `src/backend/lib/ai-worker.ts` (obsolete)
+- Delete: `src/backend/lib/work-scheduler.ts` (obsolete)
+- Modify: `src/backend/server.ts` (clean up imports)
+
+**Step 1: Verify TaskScheduler is working**
+
+Ensure new system works before deleting old code
+
+**Step 2: Remove old files**
+
+```bash
+git rm src/backend/lib/ai-worker.ts
+git rm src/backend/lib/work-scheduler.ts
+```
+
+**Step 3: Clean up server.ts**
+
+Remove old WorkScheduler imports and references
+
+**Step 4: Test server starts without errors**
+
+Run: `npx ts-node src/backend/server.ts`
+Expected: No import errors
+
+**Step 5: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 11: Add task controls to UI
+
+**Files:**
+- Modify: `src/frontend/pages/TasksPage.tsx`
+- Modify: `src/backend/server.ts`
+
+**Step 1: Add task control API endpoints**
+
+```typescript
+// Cancel a task
+app.post('/api/tasks/:id/cancel', (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    db.prepare('UPDATE tasks SET status = ? WHERE id = ?')
+      .run('blocked', taskId);
+
+    // TODO: Kill the agent process if active
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Retry a failed task
+app.post('/api/tasks/:id/retry', (req, res) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    db.prepare('UPDATE tasks SET status = ?, error_message = NULL WHERE id = ?')
+      .run('pending', taskId);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+**Step 2: Add control buttons to TasksPage**
+
+Add action column with Cancel/Retry buttons
+
+**Step 3: Test controls**
+
+Verify buttons work and update task status
+
+**Step 4: Commit**
+
+Use `/codeblend-commit`
+
+---
+
+### Task 12: Dogfooding test with gogetajob
+
+**Files:**
+- None (testing only)
+
+**Step 1: Create real test scenario**
+
+1. Create issue #16: "Add real-time notifications"
+2. Buy gogetajob position
+3. Let agent explore and create sub-tasks
+4. Observe agent behavior
+
+**Step 2: Monitor and document**
+
+Watch agent windows, check:
+- Does agent explore effectively?
+- Does agent create reasonable sub-tasks?
+- Do sub-tasks get picked up and executed?
+- Are commits meaningful?
+
+**Step 3: Document findings**
+
+Add to devlog:
+- What worked well
+- What needs improvement
+- Edge cases discovered
+
+**Step 4: Update README status to "Completed"**
+
+---
+
 ## Implementation Plan
 
 ### Phase 1: Database Schema
