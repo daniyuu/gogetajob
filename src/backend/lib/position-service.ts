@@ -27,15 +27,26 @@ export class PositionService {
 
     const buyPrice = this.githubApi.calculateProjectScore(project as any);
 
-    // Create position
+    // Create position with 'working' status (ready for task scheduler)
     const result = db.prepare(`
-      INSERT INTO positions (project_id, status, buy_price)
-      VALUES (?, 'buying', ?)
+      INSERT INTO positions (project_id, status, buy_price, max_parallel_tasks)
+      VALUES (?, 'working', ?, 1)
     `).run(projectId, buyPrice);
 
     const positionId = result.lastInsertRowid as number;
 
-    // TODO: Start Claude Code session (will implement in work scheduler)
+    // Create root exploration task for autonomous agent
+    db.prepare(`
+      INSERT INTO tasks (position_id, description, status, completion_promise)
+      VALUES (?, ?, 'pending', 'TASK_COMPLETE')
+    `).run(
+      positionId,
+      `Explore this repository and create an actionable contribution plan.
+Analyze the codebase, identify opportunities (issues, improvements, features),
+and decompose work into concrete sub-tasks stored in the database.`
+    );
+
+    console.log(`✅ Position ${positionId} created with root exploration task`);
 
     return this.getPositionById(positionId)!;
   }
