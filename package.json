@@ -1,0 +1,48 @@
+{
+  "name": "gogetajob",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build:backend": "tsc",
+    "build:frontend": "node esbuild.config.mjs",
+    "build": "npm run build:backend && npm run build:frontend",
+    "dev:backend": "tsc --watch",
+    "dev:frontend": "node esbuild.config.mjs --watch",
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daniyuu/gogetajob.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/daniyuu/gogetajob/issues"
+  },
+  "homepage": "https://github.com/daniyuu/gogetajob#readme",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.2.1",
+    "echarts": "^6.0.0",
+    "esbuild": "^0.27.4",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

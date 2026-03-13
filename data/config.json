@@ -1,0 +1,12 @@
+{
+  "port": 9393,
+  "githubToken": null,
+  "claudePath": "claude",
+  "maxParallelWorkers": 5,
+  "updateIntervals": {
+    "hot": 600,
+    "warm": 3600,
+    "cold": 86400,
+    "positions": 600
+  }
+}
