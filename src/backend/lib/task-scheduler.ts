@@ -65,6 +65,11 @@ export class TaskScheduler {
       this.pollTasks().catch(error => {
         console.error('❌ TaskScheduler poll failed:', error);
       });
+
+      // Also monitor for completion
+      this.monitorCompletion().catch(error => {
+        console.error('❌ Completion monitoring failed:', error);
+      });
     }, this.POLL_INTERVAL_MS);
 
     console.log('✅ TaskScheduler started');
@@ -244,5 +249,148 @@ You have full autonomy to:
 - Commit using /codeblend-commit
 
 When completed: <promise>${task.completion_promise}</promise>`;
+  }
+
+  /**
+   * Monitor working tasks for completion
+   */
+  private async monitorCompletion(): Promise<void> {
+    // Get all working tasks
+    const workingTasks = db.prepare(
+      "SELECT * FROM tasks WHERE status = 'working'"
+    ).all() as Task[];
+
+    for (const task of workingTasks) {
+      try {
+        // Check if task has completed by looking for new commits in worktree
+        const hasNewCommits = await this.checkForNewCommits(task);
+
+        if (hasNewCommits) {
+          // Check if completion promise was detected
+          const completionDetected = await this.checkCompletionPromise(task);
+
+          if (completionDetected) {
+            // Mark task as completed
+            db.prepare(`
+              UPDATE tasks
+              SET status = 'completed', completed_at = ?
+              WHERE id = ?
+            `).run(new Date().toISOString(), task.id);
+
+            console.log(`✅ Task ${task.id} completed!`);
+
+            // TODO: Cleanup worktree
+          }
+        }
+      } catch (error: any) {
+        console.error(`❌ Failed to monitor task ${task.id}:`, error.message);
+      }
+    }
+  }
+
+  /**
+   * Check if a task has new commits
+   */
+  private async checkForNewCommits(task: Task): Promise<boolean> {
+    if (!task.worktree_path) {
+      return false;
+    }
+
+    const worktreePath = task.worktree_path; // Type guard
+
+    try {
+      // Check if worktree directory exists
+      if (!require('fs').existsSync(worktreePath)) {
+        return false;
+      }
+
+      // Get commit count in worktree
+      const result = await new Promise<string>((resolve, reject) => {
+        const proc = spawn('git', ['rev-list', '--count', 'HEAD'], {
+          cwd: worktreePath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        proc.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        proc.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        proc.on('close', (code: number | null) => {
+          if (code === 0) {
+            resolve(stdout.trim());
+          } else {
+            reject(new Error(`Git command failed: ${stderr}`));
+          }
+        });
+
+        proc.on('error', (error: Error) => {
+          reject(error);
+        });
+      });
+
+      const commitCount = parseInt(result, 10);
+      return commitCount > 0;
+    } catch (error: any) {
+      console.error(`   Failed to check commits for task ${task.id}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Check if completion promise was detected in task worktree
+   */
+  private async checkCompletionPromise(task: Task): Promise<boolean> {
+    if (!task.worktree_path || !task.completion_promise) {
+      return false;
+    }
+
+    const worktreePath = task.worktree_path; // Type guard
+
+    try {
+      // Check latest commit message for completion promise
+      const result = await new Promise<string>((resolve, reject) => {
+        const proc = spawn('git', ['log', '-1', '--pretty=%B'], {
+          cwd: worktreePath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        proc.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        proc.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+        });
+
+        proc.on('close', (code: number | null) => {
+          if (code === 0) {
+            resolve(stdout);
+          } else {
+            reject(new Error(`Git command failed: ${stderr}`));
+          }
+        });
+
+        proc.on('error', (error: Error) => {
+          reject(error);
+        });
+      });
+
+      // Check if completion promise appears in commit message
+      const promiseTag = `<promise>${task.completion_promise}</promise>`;
+      return result.includes(promiseTag);
+    } catch (error: any) {
+      console.error(`   Failed to check completion promise for task ${task.id}:`, error.message);
+      return false;
+    }
   }
 }
