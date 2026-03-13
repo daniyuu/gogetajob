@@ -1,0 +1,8 @@
+node_modules/
+dist/
+public/js/bundle.js
+*.log
+.DS_Store
+data/*.db
+data/*.db-journal
+.env
