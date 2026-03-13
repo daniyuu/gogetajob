@@ -20,7 +20,11 @@
       "Bash(npm start)",
       "Bash(curl -s http://localhost:3000)",
       "Bash(node server.js)",
-      "Bash(npm run build:backend)"
+      "Bash(npm run build:backend)",
+      "Bash(curl -s http://localhost:9393)",
+      "Bash(pkill -f \"node server.js\")",
+      "Bash(curl -s http://localhost:9393/api/projects)",
+      "Bash(curl -X POST http://localhost:9393/api/projects -H \"Content-Type: application/json\" -d '{\"\"repo_url\"\":\"\"https://github.com/facebook/react\"\"}')"
     ]
   }
 }

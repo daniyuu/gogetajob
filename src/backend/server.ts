@@ -5,6 +5,8 @@ import { runMigrations } from './lib/migrations';
 import { loadConfig } from './lib/config';
 import { ProjectService } from './lib/project-service';
 import { PositionService } from './lib/position-service';
+import { WorkScheduler } from './lib/work-scheduler';
+import { BackgroundDaemon } from './lib/daemon';
 
 const app = express();
 const config = loadConfig();
@@ -15,6 +17,11 @@ runMigrations();
 // Services
 const projectService = new ProjectService(config.githubToken || undefined);
 const positionService = new PositionService(config.githubToken || undefined);
+const workScheduler = new WorkScheduler();
+const daemon = new BackgroundDaemon();
+
+// Start background daemon
+daemon.start();
 
 // Middleware
 app.use(cors());
@@ -93,15 +100,32 @@ app.post('/api/positions/buy', async (req, res) => {
       return res.status(400).json({ error: 'project_id is required' });
     }
     const position = await positionService.buyPosition(project_id);
+
+    // Start AI worker
+    try {
+      await workScheduler.startWork(position.id);
+    } catch (error: any) {
+      console.error('Failed to start worker:', error.message);
+      // Position is created but worker failed to start
+      // User can retry or check notifications
+    }
+
     res.json(position);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/positions/:id/sell', (req, res) => {
+app.post('/api/positions/:id/sell', async (req, res) => {
   try {
-    positionService.sellPosition(parseInt(req.params.id));
+    const positionId = parseInt(req.params.id);
+
+    // Stop AI worker first
+    await workScheduler.stopWork(positionId);
+
+    // Then sell the position
+    positionService.sellPosition(positionId);
+
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -159,6 +183,49 @@ app.post('/api/config', (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// Work scheduler status
+app.get('/api/workers', (req, res) => {
+  try {
+    const sessions = workScheduler.getActiveSessions();
+    res.json(sessions);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/workers/:positionId/start', async (req, res) => {
+  try {
+    await workScheduler.startWork(parseInt(req.params.positionId));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/workers/:positionId/stop', async (req, res) => {
+  try {
+    await workScheduler.stopWork(parseInt(req.params.positionId));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down gracefully...');
+  daemon.stop();
+  await workScheduler.stopAll();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Shutting down gracefully...');
+  daemon.stop();
+  await workScheduler.stopAll();
+  process.exit(0);
 });
 
 // Start server

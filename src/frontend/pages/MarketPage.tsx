@@ -35,7 +35,8 @@ export function MarketPage() {
 
     try {
       await api.buyPosition(project.id);
-      alert('买入成功！请在"持仓管理"查看进度');
+      alert('买入成功！请在"持仓"页面查看进度');
+      await loadProjects();
     } catch (error: any) {
       alert('买入失败: ' + (error.message || '未知错误'));
     }
@@ -61,6 +62,7 @@ export function MarketPage() {
         <ProjectList
           projects={projects}
           onBuy={handleBuyProject}
+          loading={loading}
         />
       </div>
 

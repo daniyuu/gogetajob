@@ -4,11 +4,20 @@ import { Project } from '../api';
 interface ProjectListProps {
   projects: Project[];
   onBuy: (project: Project) => void;
+  loading?: boolean;
 }
 
-export function ProjectList({ projects, onBuy }: ProjectListProps) {
+export function ProjectList({ projects, onBuy, loading }: ProjectListProps) {
+  if (loading) {
+    return <div className="loading">加载中...</div>;
+  }
+
   if (projects.length === 0) {
-    return <div className="loading">暂无项目</div>;
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+        暂无项目，点击上方"添加项目"开始
+      </div>
+    );
   }
 
   return (
