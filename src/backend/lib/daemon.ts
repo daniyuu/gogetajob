@@ -212,7 +212,7 @@ export class BackgroundDaemon {
     console.log('🔍 Checking PR status...');
 
     const prs = db.prepare(
-      "SELECT * FROM pull_requests WHERE status = 'open'"
+      "SELECT * FROM pull_requests WHERE status = 'pending'"
     ).all() as any[];
 
     console.log(`   Found ${prs.length} open PRs`);
