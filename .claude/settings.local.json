@@ -3,7 +3,11 @@
     "allow": [
       "WebFetch(domain:github.com)",
       "Bash(git config user.name)",
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(claude --version)",
+      "Bash(git commit:*)",
+      "Bash(git fetch origin)",
+      "Bash(git checkout -b feature/gogetajob-mvp)"
     ]
   }
 }

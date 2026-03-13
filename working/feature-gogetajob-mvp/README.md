@@ -3,7 +3,7 @@
 **Owner:** Luna Chen
 **Created:** 2026-03-13
 **Status:** In Progress
-**Branch:** (pending setup)
+**Branch:** feature/gogetajob-mvp
 
 ---
 
