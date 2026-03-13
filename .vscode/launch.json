@@ -1,0 +1,50 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Start GoGetAJob Server",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "ts-node",
+        "--transpile-only"
+      ],
+      "args": [
+        "${workspaceFolder}/src/backend/server.ts"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "outputCapture": "std",
+      "env": {
+        "NODE_ENV": "development",
+        "CLAUDECODE": ""
+      }
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Start Server (Debug Mode)",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "ts-node"
+      ],
+      "args": [
+        "${workspaceFolder}/src/backend/server.ts"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "outputCapture": "std",
+      "env": {
+        "NODE_ENV": "development",
+        "CLAUDECODE": ""
+      }
+    }
+  ]
+}
