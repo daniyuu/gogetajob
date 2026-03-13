@@ -162,17 +162,81 @@ export class TaskScheduler {
 
     console.log(`🚀 Spawning agent for task ${task.id}: ${task.description}`);
 
-    // TODO: Implement worktree creation
+    // Create isolated worktree
+    const worktreePath = await this.createWorktree(task.id, project.name);
+
     // TODO: Implement agent spawning with ralph-loop
     // TODO: Implement completion monitoring
 
-    // For now, just mark as working
+    // Mark task as working with worktree path
     db.prepare(`
       UPDATE tasks
-      SET status = 'working', started_at = ?
+      SET status = 'working', started_at = ?, worktree_path = ?
       WHERE id = ?
-    `).run(new Date().toISOString(), task.id);
+    `).run(new Date().toISOString(), worktreePath, task.id);
 
-    console.log(`✓ Agent spawned for task ${task.id}`);
+    console.log(`✓ Agent spawned for task ${task.id} in worktree ${worktreePath}`);
+  }
+
+  /**
+   * Create an isolated git worktree for a task
+   */
+  private async createWorktree(taskId: number, projectName: string): Promise<string> {
+    const worktreeName = `task-${taskId}`;
+    const worktreePath = path.join(this.WORKTREE_BASE, projectName, worktreeName);
+    const branchName = `agent/task-${taskId}`;
+
+    console.log(`📁 Creating worktree: ${worktreePath}`);
+
+    // Ensure parent directory exists
+    const parentDir = path.dirname(worktreePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    // Create worktree with new branch
+    await this.execGitCommand(
+      `git worktree add -b ${branchName} "${worktreePath}" HEAD`,
+      process.cwd()
+    );
+
+    console.log(`✓ Worktree created: ${worktreePath}`);
+    return worktreePath;
+  }
+
+  /**
+   * Execute a git command
+   */
+  private execGitCommand(command: string, cwd: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(command, [], {
+        shell: true,
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`Git command failed: ${stderr}`));
+        }
+      });
+
+      proc.on('error', (error) => {
+        reject(error);
+      });
+    });
   }
 }
