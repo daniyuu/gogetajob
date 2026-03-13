@@ -220,6 +220,11 @@ export class TaskScheduler {
     // Build the prompt
     const prompt = this.buildTaskPrompt(task);
 
+    // Get position info for API access
+    const position = db.prepare(
+      'SELECT * FROM positions WHERE id = ?'
+    ).get(task.position_id) as Position;
+
     // Create temp directory
     const tempDir = path.join(process.cwd(), '.gogetajob', 'temp');
     if (!fs.existsSync(tempDir)) {
@@ -246,6 +251,15 @@ Write-Host ""
 Write-Host "Removing CLAUDECODE environment variable..."
 Remove-Item Env:\\CLAUDECODE -ErrorAction SilentlyContinue
 
+# Set GoGetAJob API access environment variables
+$env:GOGETAJOB_API_URL = "http://localhost:9393"
+$env:GOGETAJOB_POSITION_ID = "${position.id}"
+$env:GOGETAJOB_TASK_ID = "${task.id}"
+Write-Host "GoGetAJob API configured: $env:GOGETAJOB_API_URL"
+Write-Host "Position ID: $env:GOGETAJOB_POSITION_ID"
+Write-Host "Current Task ID: $env:GOGETAJOB_TASK_ID"
+Write-Host ""
+
 # Read the prompt from file
 Write-Host "Reading prompt from: ${promptPath}"
 $prompt = Get-Content "${promptPath}" -Raw
@@ -270,13 +284,34 @@ Write-Host ""
 
 if ($exitCode -ne 0) {
     Write-Host "Claude exited with code: $exitCode" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Task failed. Press Enter to close..."
+    Read-Host
 } else {
     Write-Host "Claude exited successfully (code: 0)" -ForegroundColor Green
+    Write-Host ""
+
+    # Check if task is marked as completed via API
+    try {
+        $taskStatus = Invoke-RestMethod -Uri "$env:GOGETAJOB_API_URL/api/tasks/$env:GOGETAJOB_TASK_ID" -Method GET
+
+        if ($taskStatus.status -eq 'completed') {
+            Write-Host "✅ Task marked as COMPLETED - closing in 3 seconds..." -ForegroundColor Green
+            Start-Sleep -Seconds 3
+            exit 0
+        } else {
+            Write-Host "Task status: $($taskStatus.status)" -ForegroundColor Yellow
+            Write-Host "Press Enter to close..."
+            Read-Host
+        }
+    } catch {
+        Write-Host "Could not check task status. Press Enter to close..."
+        Read-Host
+    }
 }
 
 Write-Host ""
-Write-Host "Agent completed for task ${task.id}"
-Read-Host "Press Enter to close"
+Write-Host "Agent window closing for task ${task.id}"
 `;
 
     fs.writeFileSync(scriptPath, scriptContent, 'utf-8');

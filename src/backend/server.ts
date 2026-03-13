@@ -164,6 +164,122 @@ app.post('/api/notifications/:id/read', (req, res) => {
   }
 });
 
+// Tasks
+app.get('/api/tasks', (req, res) => {
+  try {
+    const { db } = require('./lib/database');
+    const positionId = req.query.position_id;
+
+    let tasks;
+    if (positionId) {
+      tasks = db.prepare('SELECT * FROM tasks WHERE position_id = ? ORDER BY created_at DESC').all(parseInt(positionId as string));
+    } else {
+      tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
+    }
+
+    res.json(tasks);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/tasks/:id', (req, res) => {
+  try {
+    const { db } = require('./lib/database');
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(parseInt(req.params.id));
+
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    res.json(task);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/tasks', (req, res) => {
+  try {
+    const { db } = require('./lib/database');
+    const { position_id, description, completion_promise, created_by_task_id } = req.body;
+
+    // Validation
+    if (!position_id || !description) {
+      return res.status(400).json({ error: 'position_id and description are required' });
+    }
+
+    // Set default completion promise if not provided
+    const promise = completion_promise || `TASK_${Date.now()}_COMPLETE`;
+
+    // Insert task
+    const result = db.prepare(`
+      INSERT INTO tasks (position_id, description, status, completion_promise, created_by_task_id)
+      VALUES (?, ?, 'pending', ?, ?)
+    `).run(position_id, description, promise, created_by_task_id || null);
+
+    // Get the created task
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
+
+    console.log(`[Server] Task created: ID ${task.id} for position ${position_id}`);
+    res.json(task);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/tasks/:id/complete', (req, res) => {
+  try {
+    const { db } = require('./lib/database');
+    const taskId = parseInt(req.params.id);
+
+    // Mark task as completed
+    db.prepare(`
+      UPDATE tasks
+      SET status = 'completed', completed_at = ?
+      WHERE id = ?
+    `).run(new Date().toISOString(), taskId);
+
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+
+    console.log(`[Server] Task ${taskId} marked as completed`);
+    res.json(task);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/tasks/:id/fail', (req, res) => {
+  try {
+    const { db } = require('./lib/database');
+    const taskId = parseInt(req.params.id);
+    const { error_message } = req.body;
+
+    // Mark task as failed
+    db.prepare(`
+      UPDATE tasks
+      SET status = 'failed', error_message = ?
+      WHERE id = ?
+    `).run(error_message || 'Task failed', taskId);
+
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+
+    console.log(`[Server] Task ${taskId} marked as failed: ${error_message}`);
+    res.json(task);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/positions/:id/tasks', (req, res) => {
+  try {
+    const { db } = require('./lib/database');
+    const tasks = db.prepare('SELECT * FROM tasks WHERE position_id = ? ORDER BY created_at DESC').all(parseInt(req.params.id));
+    res.json(tasks);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Config
 app.get('/api/config', (req, res) => {
   res.json(config);

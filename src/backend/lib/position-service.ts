@@ -42,8 +42,24 @@ export class PositionService {
     `).run(
       positionId,
       `Explore this repository and create an actionable contribution plan.
-Analyze the codebase, identify opportunities (issues, improvements, features),
-and decompose work into concrete sub-tasks stored in the database.`
+
+Your task:
+1. Analyze the codebase to identify opportunities (bugs, missing features, improvements)
+2. Decompose work into concrete sub-tasks
+3. Create each sub-task using the GoGetAJob API
+
+API Access:
+- Base URL: Available in environment variable $env:GOGETAJOB_API_URL (http://localhost:9393)
+- Your Position ID: $env:GOGETAJOB_POSITION_ID
+- Your Task ID: $env:GOGETAJOB_TASK_ID
+
+To create a sub-task:
+Invoke-RestMethod -Uri "$env:GOGETAJOB_API_URL/api/tasks" -Method POST -ContentType "application/json" -Body (@{position_id=$env:GOGETAJOB_POSITION_ID; description="Task description"; completion_promise="TASK_X_COMPLETE"; created_by_task_id=$env:GOGETAJOB_TASK_ID} | ConvertTo-Json)
+
+When you complete exploration and all sub-tasks are created, mark this task as complete:
+Invoke-RestMethod -Uri "$env:GOGETAJOB_API_URL/api/tasks/$env:GOGETAJOB_TASK_ID/complete" -Method PATCH
+
+This will automatically close the agent window.`
     );
 
     console.log(`✅ Position ${positionId} created with root exploration task`);
