@@ -10,8 +10,9 @@
  */
 
 import { db } from './database';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 
 interface Task {
   id: number;
@@ -175,13 +176,19 @@ export class TaskScheduler {
     const repoPath = path.join(projectWorkspace, 'repo');
 
     // Clone repo if not exists
-    if (!require('fs').existsSync(repoPath)) {
+    if (!fs.existsSync(repoPath)) {
       console.log(`   Cloning ${project.repo_url} to ${repoPath}...`);
-      require('fs').mkdirSync(projectWorkspace, { recursive: true });
 
-      const { execSync } = require('child_process');
+      // Validate URL to prevent command injection via malformed repo URLs
+      if (!this.isValidGitUrl(project.repo_url)) {
+        throw new Error(`Invalid repository URL: ${project.repo_url}`);
+      }
+
+      fs.mkdirSync(projectWorkspace, { recursive: true });
+
       try {
-        execSync(`git clone ${project.repo_url} repo`, {
+        // Use execFileSync with array args to avoid shell injection
+        execFileSync('git', ['clone', project.repo_url, 'repo'], {
           cwd: projectWorkspace,
           stdio: 'inherit'
         });
@@ -215,13 +222,13 @@ export class TaskScheduler {
 
     // Create temp directory
     const tempDir = path.join(process.cwd(), '.gogetajob', 'temp');
-    if (!require('fs').existsSync(tempDir)) {
-      require('fs').mkdirSync(tempDir, { recursive: true });
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
 
     // Write prompt to a file to avoid batch script parsing issues
     const promptPath = path.join(tempDir, `prompt-${task.id}.txt`);
-    require('fs').writeFileSync(promptPath, prompt, 'utf-8');
+    fs.writeFileSync(promptPath, prompt, 'utf-8');
 
     // Create PowerShell script to spawn new terminal with Claude
     const scriptPath = path.join(tempDir, `spawn-${task.id}.ps1`);
@@ -272,7 +279,7 @@ Write-Host "Agent completed for task ${task.id}"
 Read-Host "Press Enter to close"
 `;
 
-    require('fs').writeFileSync(scriptPath, scriptContent, 'utf-8');
+    fs.writeFileSync(scriptPath, scriptContent, 'utf-8');
 
     // Spawn new PowerShell window with the script
     // Use cmd.exe /c start to open a new visible window
@@ -285,6 +292,15 @@ Read-Host "Press Enter to close"
     console.log(`   Spawned PowerShell window for task ${task.id}`);
 
     return sessionId;
+  }
+
+  /**
+   * Validate that a URL is a safe git repository URL
+   */
+  private isValidGitUrl(url: string): boolean {
+    // Only allow HTTPS GitHub URLs (the expected format for this application)
+    const githubHttps = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\.git)?$/;
+    return githubHttps.test(url);
   }
 
   /**
@@ -356,7 +372,7 @@ Read-Host "Press Enter to close"
 
     try {
       // Check if worktree directory exists
-      if (!require('fs').existsSync(worktreePath)) {
+      if (!fs.existsSync(worktreePath)) {
         return false;
       }
 
