@@ -30,7 +30,7 @@ export class PositionService {
     // Create position
     const result = db.prepare(`
       INSERT INTO positions (project_id, status, buy_price)
-      VALUES (?, 'active', ?)
+      VALUES (?, 'buying', ?)
     `).run(projectId, buyPrice);
 
     const positionId = result.lastInsertRowid as number;
@@ -75,7 +75,7 @@ export class PositionService {
   getActivePosition(projectId: number): Position | undefined {
     return db.prepare(`
       SELECT * FROM positions
-      WHERE project_id = ? AND status = 'active'
+      WHERE project_id = ? AND status IN ('buying', 'working')
     `).get(projectId) as Position | undefined;
   }
 
@@ -85,7 +85,7 @@ export class PositionService {
   getActivePositions(): Position[] {
     return db.prepare(`
       SELECT * FROM positions
-      WHERE status = 'active'
+      WHERE status IN ('buying', 'working')
       ORDER BY started_at DESC
     `).all() as Position[];
   }

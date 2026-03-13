@@ -43,7 +43,7 @@ export function runMigrations() {
     CREATE TABLE IF NOT EXISTS positions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id INTEGER NOT NULL,
-      status TEXT CHECK(status IN ('active', 'stopped')) DEFAULT 'active',
+      status TEXT CHECK(status IN ('buying', 'working', 'stopped', 'error')) DEFAULT 'buying',
       claude_session_id TEXT,
       buy_price INTEGER DEFAULT 0,
       token_cost INTEGER DEFAULT 0,

@@ -189,14 +189,13 @@ export class BackgroundDaemon {
         const price = project.stars + project.forks * 2;
 
         db.prepare(`
-          INSERT INTO project_snapshots (project_id, stars, forks, price, created_at)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO project_snapshots (project_id, stars, forks, price)
+          VALUES (?, ?, ?, ?)
         `).run(
           project.id,
           project.stars,
           project.forks,
-          price,
-          new Date().toISOString()
+          price
         );
       } catch (error: any) {
         console.error(`   ✗ Failed to snapshot ${project.name}:`, error.message);

@@ -41,7 +41,7 @@ export function PortfolioPage() {
     return <div className="loading">加载中...</div>;
   }
 
-  const totalInvested = stats.reduce((sum, s) => sum + s.position.token_cost, 0);
+  const totalInvested = stats.reduce((sum, s) => sum + (s.position.token_cost || 0), 0);
   const avgROI = stats.length > 0
     ? stats.reduce((sum, s) => sum + s.roi, 0) / stats.length
     : 0;
@@ -91,20 +91,26 @@ export function PortfolioPage() {
             <tbody>
               {stats.map(({ position, project, roi }) => {
                 const currentPrice = project.stars + project.forks * 2;
+                const buyPrice = position.buy_price || 0;
+                const tokenCost = position.token_cost || 0;
                 return (
                   <tr key={position.id}>
                     <td><strong>{project.name}</strong></td>
-                    <td>{position.buy_price.toLocaleString()}</td>
+                    <td>{buyPrice.toLocaleString()}</td>
                     <td>{currentPrice.toLocaleString()}</td>
-                    <td>{position.token_cost.toLocaleString()}</td>
+                    <td>{tokenCost.toLocaleString()}</td>
                     <td className={roi > 0 ? 'price-up' : roi < 0 ? 'price-down' : ''}>
                       {roi.toFixed(2)}%
                     </td>
                     <td>
-                      {position.status === 'active' ? (
-                        <span className="price-up">活跃</span>
-                      ) : (
+                      {position.status === 'working' || position.status === 'buying' ? (
+                        <span className="price-up">工作中</span>
+                      ) : position.status === 'stopped' ? (
                         <span className="price-down">已停止</span>
+                      ) : position.status === 'error' ? (
+                        <span style={{ color: '#e74c3c' }}>错误</span>
+                      ) : (
+                        <span>{position.status}</span>
                       )}
                     </td>
                   </tr>
