@@ -12,7 +12,9 @@
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
     "start": "node server.js",
     "clean": "node scripts/clean.js",
-    "clean:db": "node scripts/clean-db.js"
+    "clean:db": "node scripts/clean-db.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
