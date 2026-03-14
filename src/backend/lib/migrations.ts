@@ -57,4 +57,23 @@ export function runMigrations(db: Database.Database): void {
       FOREIGN KEY (job_id) REFERENCES jobs(id)
     );
   `);
+  // Migration 2: add body, comments_count, has_pr to jobs
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _migration_check (id INTEGER);
+    DROP TABLE _migration_check;
+  `);
+  
+  // Check if body column exists
+  const cols = db.prepare(`PRAGMA table_info(jobs)`).all() as any[];
+  const colNames = cols.map((c: any) => c.name);
+  
+  if (!colNames.includes('body')) {
+    db.exec(`ALTER TABLE jobs ADD COLUMN body TEXT DEFAULT ''`);
+  }
+  if (!colNames.includes('comments_count')) {
+    db.exec(`ALTER TABLE jobs ADD COLUMN comments_count INTEGER DEFAULT 0`);
+  }
+  if (!colNames.includes('has_pr')) {
+    db.exec(`ALTER TABLE jobs ADD COLUMN has_pr INTEGER DEFAULT 0`);
+  }
 }
