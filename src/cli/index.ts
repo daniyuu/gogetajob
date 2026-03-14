@@ -222,6 +222,159 @@ program
     console.log();
   });
 
+// ========== start ==========
+program
+  .command("start <ref>")
+  .description("Take a job + fork/clone/branch — ready to code (format: owner/repo#issue_number)")
+  .option("--dir <path>", "custom work directory", "/tmp/work")
+  .action((ref: string, opts) => {
+    const parsed = parseRef(ref);
+    const svc = getService();
+
+    const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
+    if (!job) {
+      console.error(`Job not found: ${ref}. Run \`gogetajob scan ${parsed.owner}/${parsed.repo}\` first.`);
+      process.exit(1);
+    }
+
+    console.log(`\n🚀 Starting work on ${ref}...\n`);
+
+    // 1. Take the job
+    try {
+      svc.takeJob(job.id);
+      console.log(`  ✅ Job taken`);
+    } catch (e: any) {
+      if (e.message.includes("Already working")) {
+        console.log(`  ℹ️  Already taken — continuing setup`);
+      } else {
+        console.error(`  ❌ ${e.message}`);
+        process.exit(1);
+      }
+    }
+
+    // 2. Fork if needed
+    const myLogin = gh.getMyLogin();
+    const isOwner = parsed.owner === myLogin;
+    let cloneTarget: string;
+
+    if (isOwner) {
+      console.log(`  📦 You own this repo — no fork needed`);
+      cloneTarget = `${parsed.owner}/${parsed.repo}`;
+    } else {
+      console.log(`  🍴 Forking ${parsed.owner}/${parsed.repo}...`);
+      cloneTarget = gh.ensureFork(parsed.owner, parsed.repo, myLogin);
+      console.log(`  ✅ Fork: ${cloneTarget}`);
+    }
+
+    // 3. Clone
+    const targetDir = path.join(opts.dir, parsed.repo);
+    console.log(`  📥 Cloning to ${targetDir}...`);
+    const repoDir = gh.cloneRepo(cloneTarget, targetDir);
+    console.log(`  ✅ Cloned`);
+
+    // 4. Add upstream remote (if fork)
+    if (!isOwner) {
+      gh.addUpstreamRemote(repoDir, parsed.owner, parsed.repo);
+      console.log(`  🔗 Upstream remote added`);
+    }
+
+    // 5. Create branch
+    const branchName = `fix/${parsed.issue}-${job.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
+    gh.createBranch(repoDir, branchName);
+    console.log(`  🌿 Branch: ${branchName}`);
+
+    console.log(`\n🎯 Ready to work!`);
+    console.log(`   cd ${repoDir}`);
+    console.log(`   # make your changes, then:`);
+    console.log(`   gogetajob submit ${ref}\n`);
+  });
+
+// ========== submit ==========
+program
+  .command("submit <ref>")
+  .description("Push changes + create PR + record completion (format: owner/repo#issue_number)")
+  .option("--title <text>", "PR title (default: auto from job title)")
+  .option("--tokens <count>", "tokens consumed")
+  .option("--notes <text>", "completion notes")
+  .option("--dir <path>", "work directory", "/tmp/work")
+  .action((ref: string, opts) => {
+    const parsed = parseRef(ref);
+    const svc = getService();
+
+    const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
+    if (!job) {
+      console.error(`Job not found: ${ref}`);
+      process.exit(1);
+    }
+
+    const repoDir = path.join(opts.dir, parsed.repo);
+    const { existsSync } = require("fs");
+    if (!existsSync(path.join(repoDir, ".git"))) {
+      console.error(`❌ No repo found at ${repoDir}. Did you run \`gogetajob start ${ref}\` first?`);
+      process.exit(1);
+    }
+
+    console.log(`\n📤 Submitting work for ${ref}...\n`);
+
+    // Check if there are changes to commit
+    const { execSync: exec } = require("child_process");
+    const status = exec("git status --porcelain", { cwd: repoDir, encoding: "utf-8" }).trim();
+    if (status) {
+      // Stage and commit
+      const commitTitle = opts.title || `fix: ${job.title}`;
+      exec("git add -A", { cwd: repoDir, encoding: "utf-8" });
+      exec(`git commit -m "${commitTitle.replace(/"/g, '\\"')}\n\nFixes ${parsed.owner}/${parsed.repo}#${parsed.issue}"`, {
+        cwd: repoDir,
+        encoding: "utf-8",
+      });
+      console.log(`  ✅ Changes committed`);
+    } else {
+      console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+    }
+
+    // Push and create PR
+    const prTitle = opts.title || `fix: ${job.title}`;
+    const prBody = `Fixes #${parsed.issue}\n\n${opts.notes || "Automated PR via GoGetAJob"}`;
+
+    try {
+      const prUrl = gh.pushAndCreatePR(
+        repoDir,
+        parsed.owner,
+        parsed.repo,
+        parsed.issue,
+        prTitle,
+        prBody,
+      );
+
+      console.log(`  ✅ PR created: ${prUrl}`);
+
+      // Extract PR number from URL
+      const prMatch = prUrl.match(/\/pull\/(\d+)/);
+      const prNumber = prMatch ? parseInt(prMatch[1]) : undefined;
+
+      // Record completion
+      try {
+        svc.completeJob(job.id, {
+          pr_number: prNumber,
+          pr_url: prUrl,
+          tokens_used: opts.tokens ? parseInt(opts.tokens) : undefined,
+          notes: opts.notes,
+        });
+        console.log(`  ✅ Job recorded as done`);
+      } catch (e: any) {
+        console.log(`  ⚠️  PR created but couldn't update work log: ${e.message}`);
+      }
+
+      console.log(`\n🎉 All done!`);
+      console.log(`   PR: ${prUrl}`);
+      if (opts.tokens) console.log(`   Tokens: ${opts.tokens}`);
+      console.log();
+    } catch (e: any) {
+      console.error(`  ❌ Failed to create PR: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
 // ========== take ==========
 program
   .command("take <ref>")

@@ -200,3 +200,102 @@ export function checkLinkedPRs(owner: string, repo: string, issueNumber: number)
     return { hasPR: false, prNumbers: [] };
   }
 }
+
+/** Get current authenticated GitHub username */
+export function getMyLogin(): string {
+  return gh("api user --jq .login");
+}
+
+/** Fork a repo if not already forked. Returns the fork's full_name (e.g. myuser/repo) */
+export function ensureFork(owner: string, repo: string, myLogin: string): string {
+  // If I own the repo, no fork needed
+  if (owner === myLogin) return `${owner}/${repo}`;
+
+  // Check if fork already exists
+  try {
+    ghJson(`repo view ${myLogin}/${repo} --json name`);
+    return `${myLogin}/${repo}`;
+  } catch {
+    // Fork it
+    gh(`repo fork ${owner}/${repo} --clone=false`);
+    return `${myLogin}/${repo}`;
+  }
+}
+
+/** Clone a repo to a target dir (shallow). Returns the absolute path. */
+export function cloneRepo(fullName: string, targetDir: string): string {
+  const { execSync: exec } = require("child_process");
+  const fs = require("fs");
+  const p = require("path");
+
+  const absDir = p.resolve(targetDir);
+
+  if (fs.existsSync(p.join(absDir, ".git"))) {
+    // Already cloned, just fetch latest
+    exec("git fetch --all", { cwd: absDir, encoding: "utf-8", timeout: 30000 });
+    return absDir;
+  }
+
+  exec(`git clone --depth 10 https://github.com/${fullName}.git ${absDir}`, {
+    encoding: "utf-8",
+    timeout: 60000,
+  });
+  return absDir;
+}
+
+/** Create a branch and check it out */
+export function createBranch(repoDir: string, branchName: string): void {
+  const { execSync: exec } = require("child_process");
+  try {
+    exec(`git checkout -b ${branchName}`, { cwd: repoDir, encoding: "utf-8" });
+  } catch {
+    // Branch might already exist
+    exec(`git checkout ${branchName}`, { cwd: repoDir, encoding: "utf-8" });
+  }
+}
+
+/** Add upstream remote if working from a fork */
+export function addUpstreamRemote(repoDir: string, upstreamOwner: string, repo: string): void {
+  const { execSync: exec } = require("child_process");
+  try {
+    exec(`git remote add upstream https://github.com/${upstreamOwner}/${repo}.git`, {
+      cwd: repoDir,
+      encoding: "utf-8",
+    });
+  } catch {
+    // Remote might already exist
+  }
+}
+
+/** Push current branch and create a PR. Returns PR URL. */
+export function pushAndCreatePR(
+  repoDir: string,
+  upstreamOwner: string,
+  upstreamRepo: string,
+  issueNumber: number,
+  title: string,
+  body: string,
+): string {
+  const { execSync: exec } = require("child_process");
+
+  // Get current branch
+  const branch = exec("git rev-parse --abbrev-ref HEAD", {
+    cwd: repoDir,
+    encoding: "utf-8",
+  }).trim();
+
+  // Push
+  exec(`git push -u origin ${branch}`, {
+    cwd: repoDir,
+    encoding: "utf-8",
+    timeout: 30000,
+  });
+
+  // Create PR
+  const prUrl = exec(
+    `gh pr create -R ${upstreamOwner}/${upstreamRepo} --head ${branch} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}"`,
+    { cwd: repoDir, encoding: "utf-8", timeout: 30000 },
+  ).trim();
+
+  return prUrl;
+}
