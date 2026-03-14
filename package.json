@@ -1,12 +1,16 @@
 {
   "name": "gogetajob",
-  "version": "1.0.0",
-  "description": "",
+  "version": "3.0.0",
+  "description": "AI Agent Job Board - Find and track GitHub issues for AI agents",
   "main": "index.js",
+  "bin": {
+    "gogetajob": "./bin/gogetajob"
+  },
   "scripts": {
     "build:backend": "tsc",
     "build:frontend": "node esbuild.config.mjs",
     "build": "npm run build:backend && npm run build:frontend",
+    "build:v3": "tsc -p tsconfig.v3.json",
     "dev:backend": "tsc --watch",
     "dev:frontend": "node esbuild.config.mjs --watch",
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",

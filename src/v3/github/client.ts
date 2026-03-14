@@ -99,7 +99,7 @@ export class GitHubClient {
       .map((issue) => ({
         number: issue.number,
         title: issue.title,
-        body: issue.body,
+        body: issue.body ?? null,
         labels: issue.labels.map((l) => (typeof l === 'string' ? l : l.name || '')),
         html_url: issue.html_url,
         state: issue.state,
