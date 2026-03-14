@@ -1,8 +1,11 @@
 {
   "name": "gogetajob",
-  "version": "1.0.0",
-  "description": "",
+  "version": "2.0.0",
+  "description": "AI Agent Job Market - find work on GitHub",
   "main": "index.js",
+  "bin": {
+    "gogetajob": "./bin/gogetajob.js"
+  },
   "scripts": {
     "build:backend": "tsc",
     "build:frontend": "node esbuild.config.mjs",
@@ -27,6 +30,8 @@
   "homepage": "https://github.com/daniyuu/gogetajob#readme",
   "dependencies": {
     "better-sqlite3": "^12.6.2",
+    "chalk": "^4.1.2",
+    "commander": "^14.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "react": "^19.2.4",
