@@ -326,4 +326,61 @@ export class JobService {
       "UPDATE jobs SET has_pr = $has_pr WHERE company_id = $company_id AND issue_number = $issue_number"
     ).run({ has_pr: hasPR ? 1 : 0, company_id: companyId, issue_number: issueNumber });
   }
+
+  updatePRStatus(workLogId: number, prStatus: string): void {
+    this.db.prepare(
+      "UPDATE work_log SET pr_status = $pr_status WHERE id = $id"
+    ).run({ pr_status: prStatus, id: workLogId });
+  }
+
+  /** Get all done entries that have a PR number (for syncing) */
+  listPRsToSync(): Array<WorkEntry & { owner: string; repo: string }> {
+    return this.db.prepare(`
+      SELECT w.*, j.title as job_title, j.issue_number, c.full_name as company_name, c.owner, c.repo
+      FROM work_log w
+      JOIN jobs j ON w.job_id = j.id
+      JOIN companies c ON j.company_id = c.id
+      WHERE w.status = 'done' AND w.pr_number IS NOT NULL
+      ORDER BY w.taken_at DESC
+    `).all() as any[];
+  }
+
+  getEnrichedStats(): {
+    total_done: number;
+    merged: number;
+    pending: number;
+    closed: number;
+    total_tokens: number;
+    tokens_per_merge: number;
+    merge_rate: number;
+    needs_action: number;
+  } {
+    const rows = this.db.prepare(`
+      SELECT pr_status, tokens_used
+      FROM work_log
+      WHERE status = 'done' AND pr_number IS NOT NULL
+    `).all() as any[];
+
+    let merged = 0, pending = 0, closed = 0, totalTokens = 0, needsAction = 0;
+    for (const r of rows) {
+      totalTokens += r.tokens_used || 0;
+      const st = (r.pr_status || "open").toLowerCase();
+      if (st === "merged") merged++;
+      else if (st === "closed") closed++;
+      else if (st === "changes_requested") { pending++; needsAction++; }
+      else pending++;
+    }
+
+    const totalDone = rows.length;
+    return {
+      total_done: totalDone,
+      merged,
+      pending,
+      closed,
+      total_tokens: totalTokens,
+      tokens_per_merge: merged > 0 ? Math.round(totalTokens / merged) : 0,
+      merge_rate: totalDone > 0 ? merged / totalDone : 0,
+      needs_action: needsAction,
+    };
+  }
 }

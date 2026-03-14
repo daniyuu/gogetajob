@@ -496,6 +496,88 @@ program
     }
   });
 
+// ========== sync ==========
+program
+  .command("sync")
+  .description("Check PR statuses and update work log with latest results")
+  .action(() => {
+    const svc = getService();
+    const entries = svc.listPRsToSync();
+
+    if (entries.length === 0) {
+      console.log("\nNo PRs to sync.\n");
+      return;
+    }
+
+    console.log(`\n🔄 Syncing ${entries.length} PR(s)...\n`);
+
+    let merged = 0, needsAction = 0, open = 0, closed = 0;
+
+    for (const entry of entries) {
+      try {
+        const status = gh.getPRStatus(entry.owner, entry.repo, entry.pr_number!);
+        svc.updatePRStatus(entry.id, status.state);
+
+        const icon = status.state === "MERGED" ? "✅"
+          : status.state === "CLOSED" ? "❌"
+          : status.needsAction ? "🔴"
+          : "🔵";
+
+        console.log(`  ${icon} ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${status.state}`);
+
+        if (status.needsAction) {
+          console.log(`     ⚠️  Changes requested! Review comments need attention.`);
+          for (const review of status.reviews.filter(r => r.state === "CHANGES_REQUESTED")) {
+            const snippet = review.body.length > 100 ? review.body.slice(0, 100) + "..." : review.body;
+            if (snippet) console.log(`     💬 ${review.author}: ${snippet}`);
+          }
+          needsAction++;
+        } else if (status.reviews.length > 0) {
+          const lastReview = status.reviews[status.reviews.length - 1];
+          if (lastReview.state === "APPROVED") {
+            console.log(`     👍 Approved by ${lastReview.author}`);
+          }
+        }
+
+        if (status.state === "MERGED") merged++;
+        else if (status.state === "CLOSED") closed++;
+        else open++;
+      } catch (e: any) {
+        console.log(`  ⚠️  ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — failed to check`);
+      }
+    }
+
+    console.log(`\n📊 Summary: ${merged} merged | ${open} open | ${closed} closed${needsAction > 0 ? ` | ${needsAction} need action ⚠️` : ""}\n`);
+  });
+
+// ========== stats ==========
+program
+  .command("stats")
+  .description("Show overall work statistics and ROI")
+  .action(() => {
+    const svc = getService();
+    const stats = svc.getEnrichedStats();
+    const basicStats = svc.getStats();
+
+    console.log(`\n📊 Work Stats\n`);
+    console.log(`  📋 Total jobs done: ${stats.total_done}`);
+    console.log(`  ✅ PRs merged:     ${stats.merged}`);
+    console.log(`  🔵 PRs pending:    ${stats.pending}`);
+    console.log(`  ❌ PRs closed:     ${stats.closed}`);
+    console.log(`  🚫 Jobs dropped:   ${basicStats.dropped}`);
+    console.log();
+    console.log(`  💰 Total tokens:       ${stats.total_tokens.toLocaleString()}`);
+    console.log(`  📈 Tokens per merge:   ${stats.tokens_per_merge > 0 ? stats.tokens_per_merge.toLocaleString() : "N/A (no merges yet)"}`);
+    console.log(`  🎯 Merge rate:         ${stats.total_done > 0 ? (stats.merge_rate * 100).toFixed(0) + "%" : "N/A"}`);
+
+    if (stats.needs_action > 0) {
+      console.log();
+      console.log(`  ⚠️  ${stats.needs_action} PR(s) need your attention! Run \`gogetajob sync\` for details.`);
+    }
+
+    console.log();
+  });
+
 // ========== history ==========
 program
   .command("history")

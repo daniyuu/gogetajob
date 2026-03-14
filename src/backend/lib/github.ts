@@ -299,3 +299,46 @@ export function pushAndCreatePR(
 
   return prUrl;
 }
+
+export interface PRStatusInfo {
+  number: number;
+  state: string;       // OPEN | MERGED | CLOSED
+  mergedAt: string | null;
+  closedAt: string | null;
+  reviewComments: number;
+  reviews: Array<{
+    state: string;     // APPROVED | CHANGES_REQUESTED | COMMENTED
+    author: string;
+    body: string;
+  }>;
+  needsAction: boolean;  // true if there are unaddressed review requests
+  lastUpdated: string;
+}
+
+/** Get detailed PR status including reviews */
+export function getPRStatus(owner: string, repo: string, prNumber: number): PRStatusInfo {
+  const data = ghJson(
+    `pr view ${prNumber} -R ${owner}/${repo} --json number,state,mergedAt,closedAt,reviews,comments,updatedAt`
+  );
+
+  const reviews = (data.reviews || []).map((r: any) => ({
+    state: r.state || "COMMENTED",
+    author: r.author?.login || "unknown",
+    body: r.body || "",
+  }));
+
+  // Needs action if latest review is CHANGES_REQUESTED
+  const lastReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
+  const needsAction = lastReview?.state === "CHANGES_REQUESTED";
+
+  return {
+    number: data.number,
+    state: data.mergedAt ? "MERGED" : data.state,
+    mergedAt: data.mergedAt || null,
+    closedAt: data.closedAt || null,
+    reviewComments: data.comments?.totalCount ?? 0,
+    reviews,
+    needsAction,
+    lastUpdated: data.updatedAt || "",
+  };
+}
