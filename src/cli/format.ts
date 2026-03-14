@@ -8,13 +8,29 @@ export function formatJob(job: Job, index?: number): string {
   const difficulty = job.difficulty !== "unknown"
     ? chalk.yellow(` (${job.difficulty})`)
     : "";
+  const prFlag = job.has_pr ? chalk.red(" 🔴 PR exists") : "";
+  const commentInfo = job.comments_count > 0 ? chalk.gray(` 💬${job.comments_count}`) : "";
+
+  // Body summary: first meaningful line, max 150 chars
+  let bodySummary = "";
+  if (job.body) {
+    const clean = job.body
+      .replace(/\r?\n/g, " ")
+      .replace(/#{1,6}\s*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (clean.length > 0) {
+      bodySummary = `   ${chalk.gray("📝 " + (clean.length > 150 ? clean.slice(0, 150) + "..." : clean))}`;
+    }
+  }
 
   return [
-    `${prefix} ${type}${difficulty}${bounty} ${chalk.bold(job.title)}`,
+    `${prefix} ${type}${difficulty}${bounty}${prFlag}${commentInfo} ${chalk.bold(job.title)}`,
     `   ${chalk.gray(job.company_name || "")} #${job.issue_number}`,
     job.labels && job.labels.length > 0
       ? `   ${job.labels.map((l: string) => chalk.magenta(l)).join(" ")}`
       : null,
+    bodySummary || null,
   ]
     .filter(Boolean)
     .join("\n");

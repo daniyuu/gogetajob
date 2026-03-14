@@ -22,6 +22,7 @@ export interface IssueInfo {
   state: string;
   url: string;
   created_at: string;
+  comments: number;
 }
 
 export interface PrStats {
@@ -77,7 +78,7 @@ export function getIssues(
   opts: { limit?: number; labels?: string } = {}
 ): IssueInfo[] {
   const limit = opts.limit || 30;
-  let cmd = `issue list -R ${owner}/${repo} --state open --limit ${limit} --json number,title,body,labels,state,url,createdAt`;
+  let cmd = `issue list -R ${owner}/${repo} --state open --limit ${limit} --json number,title,body,labels,state,url,createdAt,comments`;
   if (opts.labels && opts.labels.length > 0) {
     cmd += ` --label "${opts.labels}"`;
   }
@@ -91,6 +92,7 @@ export function getIssues(
     state: d.state,
     url: d.url,
     created_at: d.createdAt,
+    comments: d.comments?.totalCount ?? 0,
   }));
 }
 
@@ -171,4 +173,30 @@ export function classifyIssue(issue: IssueInfo): { type: string; difficulty: str
   }
 
   return { type, difficulty };
+}
+
+/** Check if an issue has linked/associated open PRs */
+export function checkLinkedPRs(owner: string, repo: string, issueNumber: number): { hasPR: boolean; prNumbers: number[] } {
+  try {
+    // Search for open PRs that mention this issue
+    const prs = ghJson(
+      `pr list -R ${owner}/${repo} --state open --limit 20 --json number,title,body`
+    );
+    if (!prs || prs.length === 0) return { hasPR: false, prNumbers: [] };
+
+    const linked: number[] = [];
+    const pattern = new RegExp(`(fixes|closes|resolves)\\s*#${issueNumber}\\b`, "i");
+    const refPattern = new RegExp(`#${issueNumber}\\b`);
+
+    for (const pr of prs) {
+      const text = `${pr.title || ""} ${pr.body || ""}`;
+      if (pattern.test(text) || refPattern.test(text)) {
+        linked.push(pr.number);
+      }
+    }
+
+    return { hasPR: linked.length > 0, prNumbers: linked };
+  } catch {
+    return { hasPR: false, prNumbers: [] };
+  }
 }

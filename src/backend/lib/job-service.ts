@@ -31,6 +31,8 @@ export interface Job {
   bounty_amount: string | null;
   url: string;
   state: string;
+  comments_count: number;
+  has_pr: boolean;
   company_name?: string;
   company_language?: string;
 }
@@ -146,16 +148,18 @@ export class JobService {
     bounty_amount?: string;
     url?: string;
     state?: string;
+    comments_count?: number;
   }): number {
     const stmt = this.db.prepare(`
-      INSERT INTO jobs (company_id, issue_number, title, body, labels, job_type, difficulty, has_bounty, bounty_amount, url, state)
-      VALUES ($company_id, $issue_number, $title, $body, $labels, $job_type, $difficulty, $has_bounty, $bounty_amount, $url, $state)
+      INSERT INTO jobs (company_id, issue_number, title, body, labels, job_type, difficulty, has_bounty, bounty_amount, url, state, comments_count)
+      VALUES ($company_id, $issue_number, $title, $body, $labels, $job_type, $difficulty, $has_bounty, $bounty_amount, $url, $state, $comments_count)
       ON CONFLICT(company_id, issue_number) DO UPDATE SET
         title = $title,
         body = COALESCE($body, body),
         labels = COALESCE($labels, labels),
         job_type = COALESCE($job_type, job_type),
-        state = COALESCE($state, state)
+        state = COALESCE($state, state),
+        comments_count = COALESCE($comments_count, comments_count)
     `);
     const params = {
       company_id: companyId,
@@ -169,6 +173,7 @@ export class JobService {
       bounty_amount: data.bounty_amount ?? null,
       url: data.url ?? null,
       state: data.state ?? "open",
+      comments_count: data.comments_count ?? 0,
     };
     const result = stmt.run(params);
     if (result.changes > 0 && result.lastInsertRowid) {
@@ -209,6 +214,8 @@ export class JobService {
       ...r,
       labels: JSON.parse(r.labels || "[]"),
       has_bounty: !!r.has_bounty,
+      has_pr: !!r.has_pr,
+      comments_count: r.comments_count ?? 0,
     }));
   }
 
@@ -220,7 +227,7 @@ export class JobService {
       WHERE c.owner = $owner AND c.repo = $repo AND j.issue_number = $issue_number
     `).get({ owner, repo, issue_number: issueNumber }) as any;
     if (!row) return null;
-    return { ...row, labels: JSON.parse(row.labels || "[]"), has_bounty: !!row.has_bounty };
+    return { ...row, labels: JSON.parse(row.labels || "[]"), has_bounty: !!row.has_bounty, has_pr: !!row.has_pr, comments_count: row.comments_count ?? 0 };
   }
 
   // --- Work Log ---
@@ -312,5 +319,11 @@ export class JobService {
       FROM work_log
     `).get() as any;
     return stats;
+  }
+
+  markJobHasPR(companyId: number, issueNumber: number, hasPR: boolean): void {
+    this.db.prepare(
+      "UPDATE jobs SET has_pr = $has_pr WHERE company_id = $company_id AND issue_number = $issue_number"
+    ).run({ has_pr: hasPR ? 1 : 0, company_id: companyId, issue_number: issueNumber });
   }
 }

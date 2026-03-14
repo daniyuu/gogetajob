@@ -160,12 +160,66 @@ program
         has_bounty: issue.labels.some(l => l.toLowerCase().includes("bounty")),
         url: issue.url,
         state: issue.state.toLowerCase(),
+        comments_count: issue.comments,
       });
       added++;
     }
 
     console.log(`  📋 ${added} issues discovered`);
     console.log(`  Done!\n`);
+  });
+
+// ========== check ==========
+program
+  .command("check <ref>")
+  .description("Deep-inspect an issue before taking it (format: owner/repo#issue_number)")
+  .action((ref: string) => {
+    const parsed = parseRef(ref);
+    const svc = getService();
+
+    const job = svc.getJob(parsed.owner, parsed.repo, parsed.issue);
+    if (!job) {
+      console.error(`Job not found: ${ref}. Run \`gogetajob scan ${parsed.owner}/${parsed.repo}\` first.`);
+      process.exit(1);
+    }
+
+    const company = svc.getCompany(parsed.owner, parsed.repo);
+
+    console.log(`\n🔍 Checking ${ref}...\n`);
+
+    // Check linked PRs
+    const prInfo = gh.checkLinkedPRs(parsed.owner, parsed.repo, parsed.issue);
+    if (company) {
+      svc.markJobHasPR(company.id, parsed.issue, prInfo.hasPR);
+    }
+
+    // Display
+    const difficultyStr = job.difficulty !== "unknown" ? ` | Difficulty: ${job.difficulty}` : "";
+    console.log(`📋 ${job.title}`);
+    console.log(`🏷️  Type: ${job.job_type} | Labels: ${job.labels.join(", ") || "none"}${difficultyStr}`);
+    console.log(`💬 Comments: ${job.comments_count}`);
+    console.log(`🔗 PR: ${prInfo.hasPR ? `⚠️  YES — PR(s) #${prInfo.prNumbers.join(", #")} already linked` : "✅ No linked PRs"}`);
+    console.log();
+
+    // Show full body
+    if (job.body) {
+      console.log("── Issue Body ──────────────────────");
+      console.log(job.body.length > 1000 ? job.body.slice(0, 1000) + "\n\n... (truncated)" : job.body);
+      console.log("────────────────────────────────────");
+    } else {
+      console.log("📝 No issue body.");
+    }
+
+    // Verdict
+    console.log();
+    if (prInfo.hasPR) {
+      console.log("⚠️  Verdict: Someone may already be working on this. Check the PR(s) before proceeding.");
+    } else if (job.comments_count > 10) {
+      console.log("🤔 Verdict: Lots of discussion. Read the comments to understand context.");
+    } else {
+      console.log("✅ Verdict: Looks open. Go for it!");
+    }
+    console.log();
   });
 
 // ========== take ==========
