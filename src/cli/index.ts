@@ -278,8 +278,13 @@ program
       console.log(`  🔗 Upstream remote added`);
     }
 
-    // 5. Create branch
-    const branchName = `fix/${parsed.issue}-${job.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
+    // 5. Create branch — short and clean
+    const slug = job.title.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")  // non-alphanum → dash
+      .replace(/^-|-$/g, "")         // trim leading/trailing dashes
+      .slice(0, 30)                  // keep it short
+      .replace(/-$/, "");            // no trailing dash after slice
+    const branchName = `fix/${parsed.issue}-${slug}`;
     gh.createBranch(repoDir, branchName);
     console.log(`  🌿 Branch: ${branchName}`);
 
@@ -322,14 +327,40 @@ program
     if (status) {
       // Stage and commit
       const commitTitle = opts.title || `fix: ${job.title}`;
-      exec("git add -A", { cwd: repoDir, encoding: "utf-8" });
-      exec(`git commit -m "${commitTitle.replace(/"/g, '\\"')}\n\nFixes ${parsed.owner}/${parsed.repo}#${parsed.issue}"`, {
-        cwd: repoDir,
-        encoding: "utf-8",
-      });
-      console.log(`  ✅ Changes committed`);
+      try {
+        exec("git add -A", { cwd: repoDir, encoding: "utf-8" });
+        exec(`git commit -m "${commitTitle.replace(/"/g, '\\"')}\n\nFixes ${parsed.owner}/${parsed.repo}#${parsed.issue}"`, {
+          cwd: repoDir,
+          encoding: "utf-8",
+        });
+        console.log(`  ✅ Changes committed`);
+      } catch (commitErr: any) {
+        // Parse common failure reasons
+        const stderr = commitErr.stderr || commitErr.message || "";
+        if (stderr.includes("pre-commit") || stderr.includes("hook") || stderr.includes("husky") || stderr.includes("lint") || stderr.includes("eslint") || stderr.includes("prettier")) {
+          console.error(`\n  ❌ Commit failed — pre-commit hook rejected your changes.`);
+          console.error(`     Likely cause: lint or format errors.`);
+          console.error(`     Fix the issues in ${repoDir}, then run:`);
+          console.error(`     gogetajob submit ${ref}\n`);
+        } else {
+          console.error(`\n  ❌ Commit failed: ${stderr.split("\n")[0]}`);
+          console.error(`     Fix the issue, then run: gogetajob submit ${ref}\n`);
+        }
+        process.exit(1);
+      }
     } else {
-      console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+      // Check if there are commits ahead of origin
+      try {
+        const ahead = exec("git rev-list --count @{u}..HEAD", { cwd: repoDir, encoding: "utf-8" }).trim();
+        if (ahead === "0") {
+          console.error(`  ❌ No changes to submit. Make some changes first!`);
+          process.exit(1);
+        }
+        console.log(`  ℹ️  No uncommitted changes — using ${ahead} existing commit(s)`);
+      } catch {
+        // No upstream set, probably has local commits
+        console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+      }
     }
 
     // Push and create PR
@@ -370,7 +401,14 @@ program
       if (opts.tokens) console.log(`   Tokens: ${opts.tokens}`);
       console.log();
     } catch (e: any) {
-      console.error(`  ❌ Failed to create PR: ${e.message}`);
+      const msg = e.stderr || e.message || String(e);
+      if (msg.includes("already exists")) {
+        console.error(`  ❌ A PR from this branch already exists.`);
+      } else if (msg.includes("permission") || msg.includes("403")) {
+        console.error(`  ❌ Permission denied. Check your GitHub auth.`);
+      } else {
+        console.error(`  ❌ Failed to push/create PR: ${msg.split("\n")[0]}`);
+      }
       process.exit(1);
     }
   });
