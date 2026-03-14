@@ -716,30 +716,30 @@ interface ROIReport {
 
 ## MVP 实现范围
 
-### Phase 1: 基础设施 (必须)
+### Phase 1: 基础设施 (必须) ✅
 
 - [x] 项目初始化 (package.json, tsconfig, 目录结构)
-- [ ] 数据库 schema 和 migrations
-- [ ] GitHub API client
-- [ ] 基础配置管理
+- [x] 数据库 schema 和 migrations
+- [x] GitHub API client
+- [x] 基础配置管理
 
-### Phase 2: 核心功能 (必须)
+### Phase 2: 核心功能 (必须) ✅
 
-- [ ] CompanyProfiler - 公司画像分析
-- [ ] JobDiscovery - 工作机会发现
-- [ ] JDParser - JD 结构化解析
-- [ ] Accounting - 基础记账
+- [x] CompanyProfiler - 公司画像分析
+- [x] JobDiscovery - 工作机会发现
+- [x] JDParser - JD 结构化解析
+- [x] Accounting - 基础记账
 
-### Phase 3: CLI (必须)
+### Phase 3: CLI (必须) ✅
 
-- [ ] `gogetajob jobs list`
-- [ ] `gogetajob jobs show`
-- [ ] `gogetajob jobs apply`
-- [ ] `gogetajob company info`
-- [ ] `gogetajob company add`
-- [ ] `gogetajob report start/pr/done`
-- [ ] `gogetajob config`
-- [ ] `gogetajob sync`
+- [x] `gogetajob jobs list`
+- [x] `gogetajob jobs show`
+- [x] `gogetajob jobs apply`
+- [x] `gogetajob company info`
+- [x] `gogetajob company add`
+- [x] `gogetajob report start/pr/done`
+- [x] `gogetajob config`
+- [x] `gogetajob sync`
 
 ### Phase 4: API (可选，但推荐)
 
