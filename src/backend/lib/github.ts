@@ -387,3 +387,55 @@ export function getIssueStatus(owner: string, repo: string, issueNumber: number)
   const { hasPR } = checkLinkedPRs(owner, repo, issueNumber);
   return { state, comments, hasLinkedPR: hasPR, hasNonAuthorComment };
 }
+
+export interface MyPRInfo {
+  number: number;
+  title: string;
+  state: string; // OPEN, MERGED, CLOSED
+  url: string;
+  createdAt: string;
+  mergedAt: string | null;
+  closedAt: string | null;
+  body: string;
+  linkedIssueNumber: number | null;
+}
+
+export function getMyPRs(owner: string, repo: string): MyPRInfo[] {
+  const myLogin = getMyLogin();
+  const raw = ghJson(
+    `pr list -R ${owner}/${repo} --author ${myLogin} --state all --json number,title,state,url,createdAt,mergedAt,closedAt,body --limit 200`
+  );
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((pr: any) => {
+    // Try to extract linked issue number from PR body or title
+    // Common patterns: "Closes #N", "Fixes #N", "#N", "owner/repo#N"
+    let linkedIssue: number | null = null;
+    const text = `${pr.body || ""} ${pr.title || ""}`;
+    const patterns = [
+      new RegExp(`(?:closes|fixes|resolves)\\s+#(\\d+)`, "i"),
+      new RegExp(`(?:closes|fixes|resolves)\\s+${owner}/${repo}#(\\d+)`, "i"),
+      new RegExp(`${owner}/${repo}#(\\d+)`),
+      /\b#(\d+)\b/,
+    ];
+    for (const pat of patterns) {
+      const m = text.match(pat);
+      if (m) {
+        linkedIssue = parseInt(m[1]);
+        break;
+      }
+    }
+
+    return {
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      url: pr.url,
+      createdAt: pr.createdAt,
+      mergedAt: pr.mergedAt || null,
+      closedAt: pr.closedAt || null,
+      body: pr.body || "",
+      linkedIssueNumber: linkedIssue,
+    };
+  });
+}

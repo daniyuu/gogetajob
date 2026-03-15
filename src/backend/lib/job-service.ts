@@ -534,4 +534,68 @@ export class JobService {
       needs_action: needsAction,
     };
   }
+
+  /** Check if a PR number already exists in work_log for a given repo */
+  hasPRInLog(owner: string, repo: string, prNumber: number): boolean {
+    // Check by job_id association
+    const byJob = this.db.prepare(`
+      SELECT id FROM work_log
+      WHERE pr_number = $pr_number
+        AND job_id IN (
+          SELECT j.id FROM jobs j
+          JOIN companies c ON j.company_id = c.id
+          WHERE c.owner = $owner AND c.repo = $repo
+        )
+    `).get({ pr_number: prNumber, owner, repo });
+    if (byJob) return true;
+
+    // Also check by pr_url pattern (catches entries without job_id)
+    const byUrl = this.db.prepare(`
+      SELECT id FROM work_log
+      WHERE pr_number = $pr_number
+        AND (pr_url LIKE $url_pattern OR output_repo = $full_name)
+    `).get({
+      pr_number: prNumber,
+      url_pattern: `%${owner}/${repo}/pull/${prNumber}`,
+      full_name: `${owner}/${repo}`,
+    });
+    return !!byUrl;
+  }
+
+  /** Import a PR into work_log, linking to a job if possible */
+  importPR(data: {
+    owner: string;
+    repo: string;
+    issueNumber: number | null;
+    prNumber: number;
+    prUrl: string;
+    prStatus: string;
+    notes: string;
+    createdAt: string;
+    completedAt: string | null;
+  }): number {
+    // Try to find a matching job
+    let jobId: number | null = null;
+    if (data.issueNumber) {
+      const job = this.getJob(data.owner, data.repo, data.issueNumber);
+      if (job) {
+        jobId = job.id;
+      }
+    }
+
+    const result = this.db.prepare(`
+      INSERT INTO work_log (job_id, status, pr_number, pr_url, pr_status, notes, taken_at, completed_at, work_type)
+      VALUES ($job_id, $status, $pr_number, $pr_url, $pr_status, $notes, $taken_at, $completed_at, 'pr')
+    `).run({
+      job_id: jobId,
+      status: data.prStatus === "MERGED" || data.prStatus === "CLOSED" ? "done" : "taken",
+      pr_number: data.prNumber,
+      pr_url: data.prUrl,
+      pr_status: data.prStatus.toLowerCase(),
+      notes: data.notes,
+      taken_at: data.createdAt,
+      completed_at: data.completedAt,
+    });
+    return Number(result.lastInsertRowid);
+  }
 }
