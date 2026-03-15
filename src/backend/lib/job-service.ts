@@ -232,15 +232,15 @@ export class JobService {
 
   // --- Work Log ---
 
-  takeJob(jobId: number, tokensAtStart?: number): number {
+  takeJob(jobId: number): number {
     const existing = this.db.prepare(
       "SELECT id FROM work_log WHERE job_id = $job_id AND status IN ('taken', 'in_progress')"
     ).get({ job_id: jobId });
     if (existing) throw new Error("Already working on this job");
 
     const result = this.db.prepare(
-      "INSERT INTO work_log (job_id, status, tokens_at_start) VALUES ($job_id, 'taken', $tokens_at_start)"
-    ).run({ job_id: jobId, tokens_at_start: tokensAtStart ?? null });
+      "INSERT INTO work_log (job_id, status) VALUES ($job_id, 'taken')"
+    ).run({ job_id: jobId });
     return Number(result.lastInsertRowid);
   }
 
@@ -248,20 +248,12 @@ export class JobService {
     pr_number?: number;
     pr_url?: string;
     tokens_used?: number;
-    tokens_at_end?: number;
     notes?: string;
   }): void {
     const entry = this.db.prepare(
-      "SELECT id, tokens_at_start FROM work_log WHERE job_id = $job_id AND status IN ('taken', 'in_progress') ORDER BY taken_at DESC LIMIT 1"
-    ).get({ job_id: jobId }) as { id: number; tokens_at_start: number | null } | undefined;
+      "SELECT id FROM work_log WHERE job_id = $job_id AND status IN ('taken', 'in_progress') ORDER BY taken_at DESC LIMIT 1"
+    ).get({ job_id: jobId }) as { id: number } | undefined;
     if (!entry) throw new Error("No active work entry for this job");
-
-    // Auto-calculate tokens_used from snapshots if available
-    let tokensUsed = data.tokens_used ?? null;
-    const tokensAtEnd = data.tokens_at_end ?? null;
-    if (tokensAtEnd !== null && entry.tokens_at_start !== null && tokensUsed === null) {
-      tokensUsed = tokensAtEnd - entry.tokens_at_start;
-    }
 
     this.db.prepare(`
       UPDATE work_log SET
@@ -269,15 +261,13 @@ export class JobService {
         pr_number = COALESCE($pr_number, pr_number),
         pr_url = COALESCE($pr_url, pr_url),
         tokens_used = COALESCE($tokens_used, tokens_used),
-        tokens_at_end = $tokens_at_end,
         notes = COALESCE($notes, notes),
         completed_at = datetime('now')
       WHERE id = $id
     `).run({
       pr_number: data.pr_number ?? null,
       pr_url: data.pr_url ?? null,
-      tokens_used: tokensUsed,
-      tokens_at_end: tokensAtEnd,
+      tokens_used: data.tokens_used ?? null,
       notes: data.notes ?? null,
       id: entry.id,
     });
