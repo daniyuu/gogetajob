@@ -230,6 +230,10 @@ export class JobService {
       FROM jobs j
       JOIN companies c ON j.company_id = c.id
       WHERE ${where}
+        AND NOT EXISTS (
+          SELECT 1 FROM work_log w
+          WHERE w.job_id = j.id AND w.status = 'done' AND w.pr_number IS NOT NULL
+        )
       ORDER BY j.discovered_at DESC
       LIMIT $limit
     `).all(params) as any[];
