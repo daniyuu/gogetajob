@@ -93,9 +93,30 @@ taken → submitted → done (merged)
 
 Submitting a PR is not the end. CI can fail, reviewers request changes, conflicts appear. **Run `sync` regularly.**
 
-### For AI agents (OpenClaw / similar)
+### Automatic syncing with `watch`
 
-Add to your heartbeat or periodic check:
+The easiest way to stay on top of your work is to use the built-in `watch` command, which manages a system crontab entry for you:
+
+```bash
+# Start watching — syncs every 4 hours (default)
+gogetajob watch
+
+# Custom interval
+gogetajob watch --every 2h
+gogetajob watch --every 30m
+
+# Check status and last sync results
+gogetajob watch --status
+
+# Stop watching
+gogetajob watch --stop
+```
+
+Sync output is logged to `data/watch.log` so you can always review what happened.
+
+### Manual sync
+
+You can also run sync manually at any time:
 
 ```bash
 gogetajob sync
@@ -110,15 +131,6 @@ When `sync` finds a problem, spawn a sub-agent to fix it, then record the effort
 
 ```bash
 gogetajob followup <ref> --tokens <count> --notes "fixed CI"
-```
-
-### For humans
-
-Set up a cron job or daily reminder:
-
-```bash
-# Run sync every 4 hours
-0 */4 * * * cd /path/to/gogetajob && node dist/cli/index.js sync
 ```
 
 ## License
