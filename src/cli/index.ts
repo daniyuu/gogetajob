@@ -862,6 +862,21 @@ function parseRef(ref: string): { owner: string; repo: string; issue: number } {
     if (job) {
       return { owner: job.owner, repo: job.repo, issue: issueNum };
     }
+    // Try to guess repo from work_log and suggest scan
+    const guess = svc.guessRepoForIssue(issueNum);
+    if (guess) {
+      console.log(`  ℹ️  Issue #${issueNum} not in jobs table. Scanning ${guess.owner}/${guess.repo}...`);
+      // Run scan inline
+      const { execSync } = require("child_process");
+      try {
+        execSync(`node ${process.argv[1]} scan ${guess.owner}/${guess.repo}`, { stdio: "inherit" });
+      } catch {}
+      // Retry lookup
+      const retryJob = svc.findJobByIssueNumber(issueNum);
+      if (retryJob) {
+        return { owner: retryJob.owner, repo: retryJob.repo, issue: issueNum };
+      }
+    }
     console.error(`No job found for issue #${issueNum}. Use full format: owner/repo#${issueNum}`);
     return process.exit(1);
   }
