@@ -229,14 +229,23 @@ export function cloneRepo(fullName: string, targetDir: string): string {
   const p = require("path");
 
   const absDir = p.resolve(targetDir);
+  const expectedUrl = `https://github.com/${fullName}.git`;
 
   if (fs.existsSync(p.join(absDir, ".git"))) {
-    // Already cloned, just fetch latest
+    // Already cloned — ensure origin points to the right place
+    const currentOrigin = exec("git remote get-url origin", {
+      cwd: absDir, encoding: "utf-8", timeout: 5000,
+    }).trim();
+    if (currentOrigin !== expectedUrl) {
+      exec(`git remote set-url origin ${expectedUrl}`, {
+        cwd: absDir, encoding: "utf-8", timeout: 5000,
+      });
+    }
     exec("git fetch --all", { cwd: absDir, encoding: "utf-8", timeout: 30000 });
     return absDir;
   }
 
-  exec(`git clone --depth 10 https://github.com/${fullName}.git ${absDir}`, {
+  exec(`git clone --depth 10 ${expectedUrl} ${absDir}`, {
     encoding: "utf-8",
     timeout: 60000,
   });
@@ -284,6 +293,14 @@ export function pushAndCreatePR(
     encoding: "utf-8",
   }).trim();
 
+  // Get the fork owner from origin remote URL
+  const originUrl = exec("git remote get-url origin", {
+    cwd: repoDir,
+    encoding: "utf-8",
+  }).trim();
+  const forkMatch = originUrl.match(/github\.com[/:]([^/]+)\//);
+  const forkOwner = forkMatch ? forkMatch[1] : getMyLogin();
+
   // Push
   exec(`git push -u origin ${branch}`, {
     cwd: repoDir,
@@ -291,9 +308,10 @@ export function pushAndCreatePR(
     timeout: 30000,
   });
 
-  // Create PR
+  // Create PR — use forkOwner:branch as head so GitHub knows which fork
+  const headRef = forkOwner === upstreamOwner ? branch : `${forkOwner}:${branch}`;
   const prUrl = exec(
-    `gh pr create -R ${upstreamOwner}/${upstreamRepo} --head ${branch} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}"`,
+    `gh pr create -R ${upstreamOwner}/${upstreamRepo} --head ${headRef} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}"`,
     { cwd: repoDir, encoding: "utf-8", timeout: 30000 },
   ).trim();
 

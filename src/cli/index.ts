@@ -38,7 +38,7 @@ program
   .option("--lang <language>", "filter by programming language")
   .option("--type <type>", "filter by type: bug, feature, docs, test, refactor")
   .option("--limit <n>", "max results", "20")
-  .action((opts) => {
+  .action((opts: any) => {
     const svc = getService();
     const jobs = svc.listJobs({
       lang: opts.lang,
@@ -63,7 +63,7 @@ program
   .command("info <repo>")
   .description("Show company profile (format: owner/repo)")
   .option("--refresh", "refresh from GitHub")
-  .action(async (repoArg: string, opts) => {
+  .action(async (repoArg: string, opts: any) => {
     const [owner, repo] = repoArg.split("/");
     if (!owner || !repo) {
       console.error("Error: format should be owner/repo");
@@ -111,7 +111,7 @@ program
   .description("Scan a repo for open issues and add them as jobs")
   .option("--refresh", "force refresh existing data")
   .option("--label <label>", "only issues with this label")
-  .action(async (repoArg: string, opts) => {
+  .action(async (repoArg: string, opts: any) => {
     const [owner, repo] = repoArg.split("/");
     if (!owner || !repo) {
       console.error("Error: format should be owner/repo");
@@ -227,7 +227,7 @@ program
   .command("start <ref>")
   .description("Take a job + fork/clone/branch — ready to code (format: owner/repo#issue_number)")
   .option("--dir <path>", "custom work directory", "/tmp/work")
-  .action((ref: string, opts) => {
+  .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
 
@@ -302,7 +302,7 @@ program
   .option("--tokens <count>", "tokens consumed")
   .option("--notes <text>", "completion notes")
   .option("--dir <path>", "work directory", "/tmp/work")
-  .action((ref: string, opts) => {
+  .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
 
@@ -445,7 +445,7 @@ program
   .option("--pr <number>", "PR number")
   .option("--tokens <count>", "tokens consumed")
   .option("--notes <text>", "completion notes")
-  .action((ref: string, opts) => {
+  .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
 
@@ -584,7 +584,7 @@ program
   .description("View work history")
   .option("--repo <owner/repo>", "filter by repo")
   .option("--status <status>", "filter: taken, done, dropped")
-  .action((opts) => {
+  .action((opts: any) => {
     const svc = getService();
     const entries = svc.listWorkHistory({
       repo: opts.repo,
@@ -611,7 +611,7 @@ program
   .command("companies")
   .description("List known companies/repos")
   .option("--sort <field>", "sort: stars, merge-rate, activity", "stars")
-  .action((opts) => {
+  .action((opts: any) => {
     const svc = getService();
     const companies = svc.listCompanies(opts.sort);
 
