@@ -369,12 +369,21 @@ export function getIssueStatus(owner: string, repo: string, issueNumber: number)
   state: string;
   comments: number;
   hasLinkedPR: boolean;
+  hasNonAuthorComment: boolean;
 } {
   const data = ghJson(
-    `issue view ${issueNumber} -R ${owner}/${repo} --json state,comments`
+    `issue view ${issueNumber} -R ${owner}/${repo} --json state,comments,author`
   );
   const state = (data.state || "OPEN").toLowerCase();
-  const comments = data.comments?.length ?? 0;
+  const issueAuthor = data.author?.login || "";
+  const commentsList = data.comments || [];
+  const comments = commentsList.length;
+
+  // Check if someone other than the issue author commented
+  const hasNonAuthorComment = commentsList.some(
+    (c: any) => c.author?.login && c.author.login !== issueAuthor
+  );
+
   const { hasPR } = checkLinkedPRs(owner, repo, issueNumber);
-  return { state, comments, hasLinkedPR: hasPR };
+  return { state, comments, hasLinkedPR: hasPR, hasNonAuthorComment };
 }

@@ -581,10 +581,12 @@ program
         const issueData = gh.getIssueStatus(repoOwner, repoName, entry.output_number!);
         const newStatus = issueData.state === "closed" ? "closed"
           : issueData.hasLinkedPR ? "adopted"
+          : issueData.hasNonAuthorComment ? "discussing"
           : "open";
         svc.updateOutputStatus(entry.id, newStatus);
 
         const icon = newStatus === "adopted" ? "🎯"
+          : newStatus === "discussing" ? "💬"
           : newStatus === "closed" ? "🔒"
           : "🔵";
         console.log(`  ${icon} [Issue] ${entry.output_repo}#${entry.output_number} — ${newStatus}${issueData.comments > 0 ? ` (${issueData.comments} comments)` : ""}`);
