@@ -309,8 +309,9 @@ program
 
     console.log(`\n🎯 Ready to work!`);
     console.log(`   cd ${repoDir}`);
-    console.log(`   # make your changes, then:`);
-    console.log(`   gogetajob submit ${ref}\n`);
+    console.log(`   💡 Spawn a sub-agent in this directory for isolated token tracking`);
+    console.log(`   # when done:`);
+    console.log(`   gogetajob submit ${ref} --tokens <real_token_count>\n`);
   });
 
 // ========== submit ==========
@@ -427,7 +428,11 @@ program
 
       console.log(`\n🎉 All done!`);
       console.log(`   PR: ${prUrl}`);
-      if (opts.tokens) console.log(`   Tokens: ${parseInt(opts.tokens).toLocaleString()}`);
+      if (opts.tokens) {
+        console.log(`   Tokens: ${parseInt(opts.tokens).toLocaleString()}`);
+      } else {
+        console.log(`   ⚠️  No --tokens specified. For accurate tracking, read token count from sub-agent session_status.`);
+      }
       console.log();
     } catch (e: any) {
       const msg = e.stderr || e.message || String(e);
