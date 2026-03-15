@@ -76,4 +76,15 @@ export function runMigrations(db: Database.Database): void {
   if (!colNames.includes('has_pr')) {
     db.exec(`ALTER TABLE jobs ADD COLUMN has_pr INTEGER DEFAULT 0`);
   }
+
+  // Migration 3: add token snapshot fields to work_log for accurate tracking
+  const wlCols = db.prepare(`PRAGMA table_info(work_log)`).all() as any[];
+  const wlColNames = wlCols.map((c: any) => c.name);
+
+  if (!wlColNames.includes('tokens_at_start')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN tokens_at_start INTEGER`);
+  }
+  if (!wlColNames.includes('tokens_at_end')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN tokens_at_end INTEGER`);
+  }
 }

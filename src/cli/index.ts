@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import path from "path";
+import fs from "fs";
 import Database from "better-sqlite3";
 import { runMigrations } from "../backend/lib/migrations";
 import { JobService } from "../backend/lib/job-service";
@@ -21,6 +22,41 @@ function getDb(): Database.Database {
 
 function getService(): JobService {
   return new JobService(getDb());
+}
+
+// --- Token snapshot ---
+const snapshotPath = path.join(dataDir, "token-snapshot.json");
+
+/** Read current session token count from env or snapshot file */
+function getCurrentTokens(): number | null {
+  // Prefer env var (set by the agent before calling CLI)
+  const envTokens = process.env.GOGETAJOB_SESSION_TOKENS;
+  if (envTokens) return parseInt(envTokens, 10) || null;
+  return null;
+}
+
+/** Save token snapshot for a job (at start time) */
+function saveTokenSnapshot(jobRef: string, tokens: number): void {
+  let snapshots: Record<string, number> = {};
+  try {
+    if (fs.existsSync(snapshotPath)) {
+      snapshots = JSON.parse(fs.readFileSync(snapshotPath, "utf-8"));
+    }
+  } catch {}
+  snapshots[jobRef] = tokens;
+  fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+  fs.writeFileSync(snapshotPath, JSON.stringify(snapshots, null, 2));
+}
+
+/** Load token snapshot for a job (saved at start time) */
+function loadTokenSnapshot(jobRef: string): number | null {
+  try {
+    if (!fs.existsSync(snapshotPath)) return null;
+    const snapshots = JSON.parse(fs.readFileSync(snapshotPath, "utf-8"));
+    return snapshots[jobRef] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // --- CLI ---
@@ -239,10 +275,16 @@ program
 
     console.log(`\n🚀 Starting work on ${ref}...\n`);
 
-    // 1. Take the job
+    // 1. Take the job (with token snapshot)
+    const startTokens = getCurrentTokens();
     try {
-      svc.takeJob(job.id);
-      console.log(`  ✅ Job taken`);
+      svc.takeJob(job.id, startTokens ?? undefined);
+      if (startTokens !== null) {
+        saveTokenSnapshot(ref, startTokens);
+        console.log(`  ✅ Job taken (📊 token snapshot: ${startTokens.toLocaleString()})`);
+      } else {
+        console.log(`  ✅ Job taken`);
+      }
     } catch (e: any) {
       if (e.message.includes("Already working")) {
         console.log(`  ℹ️  Already taken — continuing setup`);
@@ -384,11 +426,14 @@ program
       const prNumber = prMatch ? parseInt(prMatch[1]) : undefined;
 
       // Record completion
+      const endTokens = getCurrentTokens();
+      const manualTokens = opts.tokens ? parseInt(opts.tokens) : undefined;
       try {
         svc.completeJob(job.id, {
           pr_number: prNumber,
           pr_url: prUrl,
-          tokens_used: opts.tokens ? parseInt(opts.tokens) : undefined,
+          tokens_used: manualTokens,
+          tokens_at_end: endTokens ?? undefined,
           notes: opts.notes,
         });
         console.log(`  ✅ Job recorded as done`);
@@ -398,7 +443,14 @@ program
 
       console.log(`\n🎉 All done!`);
       console.log(`   PR: ${prUrl}`);
-      if (opts.tokens) console.log(`   Tokens: ${opts.tokens}`);
+      // Show token info
+      const startSnapshot = loadTokenSnapshot(ref);
+      if (endTokens !== null && startSnapshot !== null) {
+        const actual = endTokens - startSnapshot;
+        console.log(`   📊 Tokens: ${actual.toLocaleString()} (measured: ${startSnapshot.toLocaleString()} → ${endTokens.toLocaleString()})`);
+      } else if (manualTokens) {
+        console.log(`   Tokens: ${manualTokens} (manual estimate)`);
+      }
       console.log();
     } catch (e: any) {
       const msg = e.stderr || e.message || String(e);
@@ -443,7 +495,7 @@ program
   .command("done <ref>")
   .description("Mark a job as completed")
   .option("--pr <number>", "PR number")
-  .option("--tokens <count>", "tokens consumed")
+  .option("--tokens <count>", "tokens consumed (auto-calculated if snapshot exists)")
   .option("--notes <text>", "completion notes")
   .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
@@ -455,17 +507,28 @@ program
       process.exit(1);
     }
 
+    const endTokens = getCurrentTokens();
+    const manualTokens = opts.tokens ? parseInt(opts.tokens) : undefined;
+
     try {
       svc.completeJob(job.id, {
         pr_number: opts.pr ? parseInt(opts.pr) : undefined,
         pr_url: opts.pr ? `https://github.com/${parsed.owner}/${parsed.repo}/pull/${opts.pr}` : undefined,
-        tokens_used: opts.tokens ? parseInt(opts.tokens) : undefined,
+        tokens_used: manualTokens,
+        tokens_at_end: endTokens ?? undefined,
         notes: opts.notes,
       });
       console.log(`\n🎉 Job done!`);
       console.log(`   ${job.title}`);
       if (opts.pr) console.log(`   PR: #${opts.pr}`);
-      if (opts.tokens) console.log(`   Tokens: ${opts.tokens}`);
+      // Show token info
+      const startSnapshot = loadTokenSnapshot(ref);
+      if (endTokens !== null && startSnapshot !== null) {
+        const actual = endTokens - startSnapshot;
+        console.log(`   📊 Tokens: ${actual.toLocaleString()} (measured: ${startSnapshot.toLocaleString()} → ${endTokens.toLocaleString()})`);
+      } else if (manualTokens) {
+        console.log(`   Tokens: ${manualTokens} (manual estimate)`);
+      }
       console.log();
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
