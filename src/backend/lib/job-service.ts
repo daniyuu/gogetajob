@@ -405,7 +405,7 @@ export class JobService {
     return !["adopted", "discussing", "closed"].includes(entry.output_status || "");
   }
 
-  listWorkHistory(filters: { repo?: string; status?: string } = {}): WorkEntry[] {
+  listWorkHistory(filters: { repo?: string; status?: string; workType?: string } = {}): WorkEntry[] {
     const conditions: string[] = ["1=1"];
     const params: Record<string, any> = {};
 
@@ -416,6 +416,15 @@ export class JobService {
     if (filters.repo) {
       conditions.push("(c.full_name = $repo OR w.output_repo = $repo)");
       params.repo = filters.repo;
+    }
+    if (filters.workType) {
+      // "pr" matches entries with pr_number set; "issue" matches work_type = 'issue'
+      if (filters.workType === "pr") {
+        conditions.push("w.pr_number IS NOT NULL");
+      } else {
+        conditions.push("w.work_type = $work_type");
+        params.work_type = filters.workType;
+      }
     }
 
     const where = conditions.join(" AND ");

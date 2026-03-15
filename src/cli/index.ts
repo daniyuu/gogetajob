@@ -664,11 +664,13 @@ program
   .description("View work history")
   .option("--repo <owner/repo>", "filter by repo")
   .option("--status <status>", "filter: taken, done, dropped")
+  .option("--type <type>", "filter: pr, issue")
   .action((opts: any) => {
     const svc = getService();
     const entries = svc.listWorkHistory({
       repo: opts.repo,
       status: opts.status,
+      workType: opts.type,
     });
 
     if (entries.length === 0) {
