@@ -308,6 +308,53 @@ export class JobService {
     ).run({ id: entry.id });
   }
 
+  /** Record a non-PR work entry (e.g., filing an issue from audit) */
+  recordWork(data: {
+    work_type: string;
+    output_repo: string;
+    output_number: number;
+    output_url: string;
+    output_status?: string;
+    tokens_used?: number;
+    notes?: string;
+  }): number {
+    const result = this.db.prepare(`
+      INSERT INTO work_log (job_id, status, work_type, output_repo, output_number, output_url, output_status, tokens_used, notes, completed_at)
+      VALUES (NULL, 'done', $work_type, $output_repo, $output_number, $output_url, $output_status, $tokens_used, $notes, datetime('now'))
+    `).run({
+      work_type: data.work_type,
+      output_repo: data.output_repo,
+      output_number: data.output_number,
+      output_url: data.output_url,
+      output_status: data.output_status ?? "open",
+      tokens_used: data.tokens_used ?? null,
+      notes: data.notes ?? null,
+    });
+    return Number(result.lastInsertRowid);
+  }
+
+  /** Get all work entries that need syncing (PRs + issues) */
+  listOutputsToSync(): any[] {
+    return this.db.prepare(`
+      SELECT w.*, j.title as job_title, j.issue_number,
+        COALESCE(c.full_name, w.output_repo) as company_name,
+        COALESCE(c.owner, '') as owner, COALESCE(c.repo, '') as repo
+      FROM work_log w
+      LEFT JOIN jobs j ON w.job_id = j.id AND w.job_id > 0
+      LEFT JOIN companies c ON j.company_id = c.id
+      WHERE w.status = 'done'
+        AND (w.pr_number IS NOT NULL OR w.output_number IS NOT NULL)
+      ORDER BY w.taken_at DESC
+    `).all();
+  }
+
+  /** Update output status for any work type */
+  updateOutputStatus(workLogId: number, status: string): void {
+    this.db.prepare(
+      "UPDATE work_log SET output_status = $status, pr_status = $status WHERE id = $id"
+    ).run({ status, id: workLogId });
+  }
+
   listWorkHistory(filters: { repo?: string; status?: string } = {}): WorkEntry[] {
     const conditions: string[] = ["1=1"];
     const params: Record<string, any> = {};
@@ -317,16 +364,17 @@ export class JobService {
       params.status = filters.status;
     }
     if (filters.repo) {
-      conditions.push("c.full_name = $repo");
+      conditions.push("(c.full_name = $repo OR w.output_repo = $repo)");
       params.repo = filters.repo;
     }
 
     const where = conditions.join(" AND ");
     return this.db.prepare(`
-      SELECT w.*, j.title as job_title, j.issue_number, c.full_name as company_name
+      SELECT w.*, j.title as job_title, j.issue_number,
+        COALESCE(c.full_name, w.output_repo) as company_name
       FROM work_log w
-      JOIN jobs j ON w.job_id = j.id
-      JOIN companies c ON j.company_id = c.id
+      LEFT JOIN jobs j ON w.job_id = j.id AND w.job_id > 0
+      LEFT JOIN companies c ON j.company_id = c.id
       WHERE ${where}
       ORDER BY w.taken_at DESC
     `).all(params) as WorkEntry[];
