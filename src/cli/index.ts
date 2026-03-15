@@ -831,10 +831,25 @@ program.parse();
 // === Helpers ===
 
 function parseRef(ref: string): { owner: string; repo: string; issue: number } {
+  // Full format: owner/repo#issue_number
   const match = ref.match(/^([^\/]+)\/([^#]+)#(\d+)$/);
-  if (!match) {
-    console.error(`Invalid format: "${ref}". Expected: owner/repo#issue_number`);
+  if (match) {
+    return { owner: match[1]!, repo: match[2]!, issue: parseInt(match[3]!) };
+  }
+
+  // Short format: just a number (e.g., "34" or "#34")
+  const numMatch = ref.match(/^#?(\d+)$/);
+  if (numMatch) {
+    const issueNum = parseInt(numMatch[1]!);
+    const svc = getService();
+    const job = svc.findJobByIssueNumber(issueNum);
+    if (job) {
+      return { owner: job.owner, repo: job.repo, issue: issueNum };
+    }
+    console.error(`No job found for issue #${issueNum}. Use full format: owner/repo#${issueNum}`);
     return process.exit(1);
   }
-  return { owner: match[1]!, repo: match[2]!, issue: parseInt(match[3]!) };
+
+  console.error(`Invalid format: "${ref}". Expected: owner/repo#issue_number or just the issue number`);
+  return process.exit(1);
 }

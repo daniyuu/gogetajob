@@ -254,6 +254,17 @@ export class JobService {
     return { ...row, labels: JSON.parse(row.labels || "[]"), has_bounty: !!row.has_bounty, has_pr: !!row.has_pr, comments_count: row.comments_count ?? 0 };
   }
 
+  /** Find a job by issue number alone (for short-form refs) */
+  findJobByIssueNumber(issueNumber: number): { owner: string; repo: string } | null {
+    const row = this.db.prepare(`
+      SELECT c.owner, c.repo FROM jobs j
+      JOIN companies c ON j.company_id = c.id
+      WHERE j.issue_number = $issue
+      LIMIT 1
+    `).get({ issue: issueNumber }) as { owner: string; repo: string } | undefined;
+    return row || null;
+  }
+
   // --- Work Log ---
 
   takeJob(jobId: number): number {
