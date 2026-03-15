@@ -517,23 +517,32 @@ program
 // ========== sync ==========
 program
   .command("sync")
-  .description("Check PR statuses and update work log with latest results")
+  .description("Check PR and issue statuses — update work log with latest results")
   .action(() => {
     const svc = getService();
-    const entries = svc.listPRsToSync();
+    const entries = svc.listOutputsToSync();
 
     if (entries.length === 0) {
-      console.log("\nNo PRs to sync.\n");
+      console.log("\nNothing to sync.\n");
       return;
     }
 
-    console.log(`\n🔄 Syncing ${entries.length} PR(s)...\n`);
+    // Split into PR entries and issue entries
+    const prEntries = entries.filter(e => e.pr_number && (!e.work_type || e.work_type === "pr"));
+    const issueEntries = entries.filter(e => e.work_type === "issue" && e.output_number);
+
+    const total = prEntries.length + issueEntries.length;
+    console.log(`\n🔄 Syncing ${total} item(s)...\n`);
 
     let merged = 0, needsAction = 0, open = 0, closed = 0;
+    let issueAdopted = 0, issueOpen = 0, issueClosed = 0;
 
-    for (const entry of entries) {
+    // Sync PRs
+    for (const entry of prEntries) {
       try {
-        const status = gh.getPRStatus(entry.owner, entry.repo, entry.pr_number!);
+        const [prOwner, prRepo] = (entry.company_name || "").split("/");
+        if (!prOwner || !prRepo) continue;
+        const status = gh.getPRStatus(prOwner, prRepo, entry.pr_number!);
         svc.updatePRStatus(entry.id, status.state);
 
         const icon = status.state === "MERGED" ? "✅"
@@ -541,7 +550,7 @@ program
           : status.needsAction ? "🔴"
           : "🔵";
 
-        console.log(`  ${icon} ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${status.state}`);
+        console.log(`  ${icon} [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${status.state}`);
 
         if (status.needsAction) {
           console.log(`     ⚠️  Changes requested! Review comments need attention.`);
@@ -550,22 +559,51 @@ program
             if (snippet) console.log(`     💬 ${review.author}: ${snippet}`);
           }
           needsAction++;
-        } else if (status.reviews.length > 0) {
-          const lastReview = status.reviews[status.reviews.length - 1];
-          if (lastReview.state === "APPROVED") {
-            console.log(`     👍 Approved by ${lastReview.author}`);
-          }
         }
 
         if (status.state === "MERGED") merged++;
         else if (status.state === "CLOSED") closed++;
         else open++;
       } catch (e: any) {
-        console.log(`  ⚠️  ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — failed to check`);
+        console.log(`  ⚠️  [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — failed to check`);
       }
     }
 
-    console.log(`\n📊 Summary: ${merged} merged | ${open} open | ${closed} closed${needsAction > 0 ? ` | ${needsAction} need action ⚠️` : ""}\n`);
+    // Sync issues
+    for (const entry of issueEntries) {
+      try {
+        const [repoOwner, repoName] = (entry.output_repo || "").split("/");
+        if (!repoOwner || !repoName) continue;
+
+        const issueData = gh.getIssueStatus(repoOwner, repoName, entry.output_number!);
+        const newStatus = issueData.state === "closed" ? "closed"
+          : issueData.hasLinkedPR ? "adopted"
+          : "open";
+
+        svc.updateOutputStatus(entry.id, newStatus);
+
+        const icon = newStatus === "adopted" ? "🎯"
+          : newStatus === "closed" ? "🔒"
+          : "🔵";
+
+        console.log(`  ${icon} [Issue] ${entry.output_repo}#${entry.output_number} — ${newStatus}${issueData.comments > 0 ? ` (${issueData.comments} comments)` : ""}`);
+
+        if (newStatus === "adopted") issueAdopted++;
+        else if (newStatus === "closed") issueClosed++;
+        else issueOpen++;
+      } catch (e: any) {
+        console.log(`  ⚠️  [Issue] ${entry.output_repo}#${entry.output_number} — failed to check`);
+      }
+    }
+
+    console.log(`\n📊 Summary:`);
+    if (prEntries.length > 0) {
+      console.log(`  PRs: ${merged} merged | ${open} open | ${closed} closed${needsAction > 0 ? ` | ${needsAction} need action ⚠️` : ""}`);
+    }
+    if (issueEntries.length > 0) {
+      console.log(`  Issues: ${issueAdopted} adopted | ${issueOpen} open | ${issueClosed} closed`);
+    }
+    console.log();
   });
 
 // ========== stats ==========
@@ -643,6 +681,140 @@ program
       console.log(formatCompany(c));
       console.log();
     });
+  });
+
+// ========== audit ==========
+program
+  .command("audit <repo>")
+  .description("Audit a repo — analyze codebase health and suggest improvements")
+  .option("--dir <path>", "work directory", "/tmp/work")
+  .option("--create-issues", "create GitHub issues for findings")
+  .option("--tokens <count>", "tokens consumed for this audit (split across created issues)")
+  .action((repoArg: string, opts: any) => {
+    const [owner, repo] = repoArg.split("/");
+    if (!owner || !repo) {
+      console.error("Error: format should be owner/repo");
+      process.exit(1);
+    }
+
+    const svc = getService();
+
+    console.log(`\n🔍 Auditing ${owner}/${repo}...\n`);
+
+    // 1. Clone/pull the repo
+    const targetDir = path.join(opts.dir, repo);
+    const repoDir = gh.cloneRepo(`${owner}/${repo}`, targetDir);
+
+    // 2. Gather basic stats
+    const { execSync: exec } = require("child_process");
+    const fs = require("fs");
+
+    // File count by extension
+    let fileList = "";
+    try {
+      fileList = exec("git ls-files", { cwd: repoDir, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+    } catch { fileList = ""; }
+
+    const files = fileList.trim().split("\n").filter(Boolean);
+    const extCounts: Record<string, number> = {};
+    for (const f of files) {
+      const ext = f.includes(".") ? f.split(".").pop()! : "(none)";
+      extCounts[ext] = (extCounts[ext] || 0) + 1;
+    }
+
+    // Check for common files
+    const hasReadme = files.some(f => f.toLowerCase().startsWith("readme"));
+    const hasContributing = files.some(f => f.toLowerCase().includes("contributing"));
+    const hasLicense = files.some(f => f.toLowerCase().startsWith("license"));
+    const hasCI = files.some(f => f.startsWith(".github/workflows/") || f === ".travis.yml" || f === ".circleci/config.yml");
+    const hasTests = files.some(f => f.includes("test") || f.includes("spec") || f.includes("__tests__"));
+    const hasEnvExample = files.some(f => f.includes(".env.example") || f.includes(".env.sample"));
+    const hasDockerfile = files.some(f => f.toLowerCase() === "dockerfile" || f === "docker-compose.yml");
+    const hasChangelog = files.some(f => f.toLowerCase().startsWith("changelog"));
+
+    // Recent commit activity
+    let recentCommits = 0;
+    try {
+      const count = exec('git rev-list --count --since="30 days ago" HEAD', {
+        cwd: repoDir, encoding: "utf-8"
+      }).trim();
+      recentCommits = parseInt(count) || 0;
+    } catch {}
+
+    // Open issues & PRs from GitHub
+    const info = gh.getRepoInfo(owner, repo);
+
+    console.log(`📊 Repository Health Report\n`);
+    console.log(`  📁 Files: ${files.length}`);
+    const topExts = Object.entries(extCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    console.log(`  📝 Top types: ${topExts.map(([ext, n]) => `${ext}(${n})`).join(", ")}`);
+    console.log(`  ⭐ Stars: ${info.stars} | 🍴 Forks: ${info.forks} | 📋 Open issues: ${info.open_issues}`);
+    console.log(`  📅 Commits (30d): ${recentCommits}`);
+    console.log();
+
+    console.log(`📋 Checklist\n`);
+    const check = (ok: boolean, label: string) => console.log(`  ${ok ? "✅" : "❌"} ${label}`);
+    check(hasReadme, "README");
+    check(hasContributing, "CONTRIBUTING guide");
+    check(hasLicense, "LICENSE");
+    check(hasCI, "CI/CD (GitHub Actions, etc.)");
+    check(hasTests, "Tests");
+    check(hasEnvExample, ".env.example");
+    check(hasDockerfile, "Dockerfile / docker-compose");
+    check(hasChangelog, "CHANGELOG");
+    console.log();
+
+    // Suggest findings
+    const findings: string[] = [];
+    if (!hasTests) findings.push("No test files detected — add unit/integration tests");
+    if (!hasCI) findings.push("No CI/CD configuration — add GitHub Actions workflow");
+    if (!hasContributing) findings.push("No CONTRIBUTING.md — makes it hard for new contributors");
+    if (!hasEnvExample) findings.push("No .env.example — environment setup unclear");
+    if (!hasChangelog) findings.push("No CHANGELOG — track releases and changes");
+    if (!hasLicense) findings.push("No LICENSE — legal risk for contributors");
+    if (recentCommits === 0) findings.push("No commits in 30 days — project may be stale");
+
+    if (findings.length > 0) {
+      console.log(`⚠️  Quick Findings (${findings.length})\n`);
+      findings.forEach((f, i) => console.log(`  ${i + 1}. ${f}`));
+      console.log();
+    } else {
+      console.log(`  ✨ No obvious issues found from quick scan.\n`);
+    }
+
+    console.log(`💡 For deeper analysis, run an AI-powered code review on the repo.`);
+    console.log(`   Repo cloned at: ${repoDir}\n`);
+
+    // Create issues if requested
+    if (opts.createIssues && findings.length > 0) {
+      console.log(`📝 Creating ${findings.length} issue(s)...\n`);
+      for (const finding of findings) {
+        try {
+          const url = exec(
+            `gh issue create -R ${owner}/${repo} --title "audit: ${finding.split(" — ")[0]}" --body "Found during automated audit.\n\n${finding}\n\nDiscovered by GoGetAJob audit."`,
+            { encoding: "utf-8", timeout: 15000 }
+          ).trim();
+          console.log(`  ✅ ${url}`);
+
+          // Record as issue-type work entry
+          const issueMatch = url.match(/\/issues\/(\d+)/);
+          if (issueMatch) {
+            svc.recordWork({
+              work_type: "issue",
+              output_repo: `${owner}/${repo}`,
+              output_number: parseInt(issueMatch[1]),
+              output_url: url,
+              output_status: "open",
+              tokens_used: opts.tokens ? Math.round(parseInt(opts.tokens) / findings.length) : undefined,
+              notes: `audit: ${finding.split(" — ")[0]}`,
+            });
+          }
+        } catch (e: any) {
+          console.log(`  ❌ Failed: ${finding.split(" — ")[0]}`);
+        }
+      }
+      console.log();
+    }
   });
 
 program.parse();
