@@ -266,13 +266,16 @@ export function createBranch(repoDir: string, branchName: string): void {
 /** Add upstream remote if working from a fork */
 export function addUpstreamRemote(repoDir: string, upstreamOwner: string, repo: string): void {
   const { execSync: exec } = require("child_process");
+  // Check if upstream already exists
   try {
+    exec("git remote get-url upstream", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+    // Already exists — no-op
+  } catch {
+    // Doesn't exist — add it
     exec(`git remote add upstream https://github.com/${upstreamOwner}/${repo}.git`, {
       cwd: repoDir,
       encoding: "utf-8",
     });
-  } catch {
-    // Remote might already exist
   }
 }
 

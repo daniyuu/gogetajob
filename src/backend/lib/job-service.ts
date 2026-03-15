@@ -185,6 +185,30 @@ export class JobService {
     return row?.id ?? 0;
   }
 
+  /** Mark jobs as closed if they're no longer in the open issues set */
+  closeStaleJobs(companyId: number, openIssueNumbers: Set<number>): number {
+    if (openIssueNumbers.size === 0) {
+      // If no open issues at all, close everything for this company
+      const result = this.db.prepare(
+        "UPDATE jobs SET state = 'closed' WHERE company_id = $company_id AND state = 'open'"
+      ).run({ company_id: companyId });
+      return result.changes;
+    }
+
+    const openJobs = this.db.prepare(
+      "SELECT id, issue_number FROM jobs WHERE company_id = $company_id AND state = 'open'"
+    ).all({ company_id: companyId }) as { id: number; issue_number: number }[];
+
+    let closed = 0;
+    for (const job of openJobs) {
+      if (!openIssueNumbers.has(job.issue_number)) {
+        this.db.prepare("UPDATE jobs SET state = 'closed' WHERE id = $id").run({ id: job.id });
+        closed++;
+      }
+    }
+    return closed;
+  }
+
   listJobs(filters: { lang?: string; type?: string; limit?: number } = {}): Job[] {
     const conditions: string[] = ["j.state = 'open'"];
     const params: Record<string, any> = {};
