@@ -362,6 +362,8 @@ export class JobService {
       WHERE w.status = 'done'
         AND (w.pr_number IS NOT NULL OR w.output_number IS NOT NULL)
         AND COALESCE(w.output_status, '') NOT IN ('deleted')
+        AND COALESCE(w.pr_status, '') NOT IN ('MERGED', 'CLOSED')
+        AND COALESCE(w.output_status, '') NOT IN ('closed')
       ORDER BY w.taken_at DESC
     `).all();
   }
