@@ -148,7 +148,9 @@ program
     });
 
     let added = 0;
+    const openIssueNumbers = new Set<number>();
     for (const issue of issues) {
+      openIssueNumbers.add(issue.number);
       const classified = gh.classifyIssue(issue);
       svc.upsertJob(companyId, {
         issue_number: issue.number,
@@ -163,6 +165,12 @@ program
         comments_count: issue.comments,
       });
       added++;
+    }
+
+    // Mark issues no longer open as closed
+    const closed = svc.closeStaleJobs(companyId, openIssueNumbers);
+    if (closed > 0) {
+      console.log(`  🔒 ${closed} issues marked as closed`);
     }
 
     console.log(`  📋 ${added} issues discovered`);
@@ -351,15 +359,25 @@ program
     } else {
       // Check if there are commits ahead of origin
       try {
-        const ahead = exec("git rev-list --count @{u}..HEAD", { cwd: repoDir, encoding: "utf-8" }).trim();
+        const ahead = exec("git rev-list --count @{u}..HEAD", { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
         if (ahead === "0") {
           console.error(`  ❌ No changes to submit. Make some changes first!`);
           process.exit(1);
         }
         console.log(`  ℹ️  No uncommitted changes — using ${ahead} existing commit(s)`);
       } catch {
-        // No upstream set, probably has local commits
-        console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+        // No upstream set — check if we have any local commits at all
+        try {
+          const logCount = exec("git rev-list --count HEAD", { cwd: repoDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+          if (parseInt(logCount) > 0) {
+            console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+          } else {
+            console.error(`  ❌ No changes to submit. Make some changes first!`);
+            process.exit(1);
+          }
+        } catch {
+          console.log(`  ℹ️  No uncommitted changes — using existing commits`);
+        }
       }
     }
 
