@@ -235,6 +235,7 @@ program
   .command("start <ref>")
   .description("Take a job + fork/clone/branch — ready to code (format: owner/repo#issue_number)")
   .option("--dir <path>", "custom work directory", "/tmp/work")
+  .option("--force", "override self-filed issue guard")
   .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
@@ -243,6 +244,16 @@ program
     if (!job) {
       console.error(`Job not found: ${ref}. Run \`gogetajob scan ${parsed.owner}/${parsed.repo}\` first.`);
       process.exit(1);
+    }
+
+    // Guard: don't start self-filed issues until owner responds
+    if (svc.isSelfFiledUnadopted(`${parsed.owner}/${parsed.repo}`, parsed.issue)) {
+      if (!opts.force) {
+        console.error(`\n⛔ This issue was filed by you and hasn't been acknowledged by the owner yet.`);
+        console.error(`   Wait for the owner to respond, or use --force to override.\n`);
+        process.exit(1);
+      }
+      console.log(`\n⚠️  Overriding self-filed guard (--force)\n`);
     }
 
     console.log(`\n🚀 Starting work on ${ref}...\n`);
@@ -797,6 +808,7 @@ program
               output_status: "open",
               tokens_used: opts.tokens ? Math.round(parseInt(opts.tokens) / findings.length) : undefined,
               notes: `audit: ${finding.split(" — ")[0]}`,
+              filed_by: gh.getMyLogin(),
             });
           }
         } catch (e: any) {
