@@ -134,4 +134,11 @@ export function runMigrations(db: Database.Database): void {
       ALTER TABLE work_log_new RENAME TO work_log;
     `);
   }
+
+  // Migration 5: add filed_by for issue lifecycle tracking
+  const wlCols5 = db.prepare(`PRAGMA table_info(work_log)`).all() as any[];
+  const wlColNames5 = wlCols5.map((c: any) => c.name);
+  if (!wlColNames5.includes('filed_by')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN filed_by TEXT`);
+  }
 }
