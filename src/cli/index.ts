@@ -824,14 +824,14 @@ program
           const issueMatch = url.match(/\/issues\/(\d+)/);
           if (issueMatch) {
             svc.recordWork({
-              work_type: "issue",
-              output_repo: `${owner}/${repo}`,
-              output_number: parseInt(issueMatch[1]),
-              output_url: url,
-              output_status: "open",
-              tokens_used: opts.tokens ? Math.round(parseInt(opts.tokens) / findings.length) : undefined,
+              workType: "issue",
+              outputRepo: `${owner}/${repo}`,
+              outputNumber: parseInt(issueMatch[1]),
+              outputUrl: url,
+              outputStatus: "open",
+              tokensUsed: opts.tokens ? Math.round(parseInt(opts.tokens) / findings.length) : undefined,
               notes: `audit: ${finding.split(" — ")[0]}`,
-              filed_by: gh.getMyLogin(),
+              filedBy: gh.getMyLogin(),
             });
           }
         } catch (e: any) {
