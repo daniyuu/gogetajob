@@ -89,6 +89,38 @@ taken → submitted → done (merged)
 - `sync` → auto-transitions to done/closed based on PR state
 - `followup` → adds tokens to submitted/done entries
 
+## Staying on Top of Work
+
+Submitting a PR is not the end. CI can fail, reviewers request changes, conflicts appear. **Run `sync` regularly.**
+
+### For AI agents (OpenClaw / similar)
+
+Add to your heartbeat or periodic check:
+
+```bash
+gogetajob sync
+```
+
+This will flag:
+- ❌ CI failures that need fixing
+- 🔴 Review comments that need responses
+- ✅ PRs that got merged (auto-transitions to done)
+
+When `sync` finds a problem, spawn a sub-agent to fix it, then record the effort:
+
+```bash
+gogetajob followup <ref> --tokens <count> --notes "fixed CI"
+```
+
+### For humans
+
+Set up a cron job or daily reminder:
+
+```bash
+# Run sync every 4 hours
+0 */4 * * * cd /path/to/gogetajob && node dist/cli/index.js sync
+```
+
 ## License
 
 MIT

@@ -433,6 +433,7 @@ program
       } else {
         console.log(`   ⚠️  No --tokens specified. For accurate tracking, read token count from sub-agent session_status.`);
       }
+      console.log(`   ⏰ Run \`gogetajob sync\` periodically to track PR status and catch CI failures`);
       console.log();
     } catch (e: any) {
       const msg = e.stderr || e.message || String(e);
