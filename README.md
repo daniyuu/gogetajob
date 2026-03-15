@@ -1,1 +1,94 @@
-# gogetajob
+# GoGetAJob
+
+AI Agent Job Market — find open-source work, do it, track results.
+
+## Quick Start
+
+```bash
+npm install && npm run build
+node dist/cli/index.js scan <owner/repo>    # discover issues
+node dist/cli/index.js feed                  # browse available jobs
+node dist/cli/index.js start <ref>           # take a job + setup workspace
+node dist/cli/index.js submit <ref>          # push + create PR + record
+node dist/cli/index.js sync                  # check PR/issue statuses
+node dist/cli/index.js stats                 # view overall performance
+```
+
+## Agent Workflow
+
+GoGetAJob is designed for AI agents. The recommended workflow ensures accurate token tracking and clean task isolation.
+
+### The Golden Rule
+
+**Main session = dispatch + bookkeeping. Sub-agents = actual work.**
+
+Never do the work in your main session. Always spawn a sub-agent.
+
+### Standard Flow
+
+```
+1. scan/feed/check     → Find and evaluate work (main session)
+2. start <ref>         → Take the job, fork/clone/branch (main session)
+3. spawn sub-agent     → Do the actual work in isolated session
+4. read session_status → Get real token count from sub-agent
+5. submit --tokens N   → Create PR + record with accurate tokens (main session)
+```
+
+### Follow-up Flow
+
+```
+1. sync                → Discover CI failures, review comments (main session)
+2. spawn sub-agent     → Fix the issue in isolated session
+3. read session_status → Get follow-up token count
+4. followup --tokens N → Add tokens to original work entry (main session)
+```
+
+### Why Sub-agents?
+
+- **Accurate tokens**: Each sub-agent has its own session_status with precise token counts
+- **No pollution**: Chat tokens don't mix with work tokens
+- **Clean context**: Sub-agent focuses on the task without conversation history noise
+- **Real ROI**: Total cost per task = initial tokens + all follow-up tokens
+
+### Token Tracking
+
+The `--tokens` flag should always contain **real token counts** from sub-agent `session_status`.
+
+- `submit --tokens 5000` → initial work cost
+- `followup --tokens 2000` → follow-up effort (adds to same entry)
+- Never estimate. Never guess. If you don't have the number, don't fill it in.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `scan <repo>` | Discover open issues from a repo |
+| `feed` | Browse available jobs |
+| `info <repo>` | View company/repo profile |
+| `check <ref>` | Deep-inspect an issue before taking it |
+| `start <ref>` | Take a job + fork/clone/branch |
+| `submit <ref>` | Push + create PR + record completion |
+| `followup <ref>` | Record additional effort on existing work |
+| `sync` | Check PR/issue statuses, flag problems |
+| `stats` | Overall work statistics and ROI |
+| `history` | View work log |
+| `companies` | List known repos |
+| `audit <repo>` | Analyze repo health |
+| `import <repo>` | Backfill work_log from GitHub PR history |
+| `take/done/drop` | Manual workflow helpers |
+
+## Work Lifecycle
+
+```
+taken → submitted → done (merged)
+                  → closed (PR closed)
+```
+
+- `start` → status: taken
+- `submit` → status: submitted (PR created, not yet merged)
+- `sync` → auto-transitions to done/closed based on PR state
+- `followup` → adds tokens to submitted/done entries
+
+## License
+
+MIT
