@@ -325,27 +325,27 @@ export class JobService {
 
   /** Record a non-PR work entry (e.g., filing an issue from audit) */
   recordWork(data: {
-    work_type: string;
-    output_repo: string;
-    output_number: number;
-    output_url: string;
-    output_status?: string;
-    tokens_used?: number;
+    workType: string;
+    outputRepo: string;
+    outputNumber: number;
+    outputUrl: string;
+    outputStatus?: string;
+    tokensUsed?: number;
     notes?: string;
-    filed_by?: string;
+    filedBy?: string;
   }): number {
     const result = this.db.prepare(`
       INSERT INTO work_log (job_id, status, work_type, output_repo, output_number, output_url, output_status, tokens_used, notes, filed_by, completed_at)
       VALUES (NULL, 'done', $work_type, $output_repo, $output_number, $output_url, $output_status, $tokens_used, $notes, $filed_by, datetime('now'))
     `).run({
-      work_type: data.work_type,
-      output_repo: data.output_repo,
-      output_number: data.output_number,
-      output_url: data.output_url,
-      output_status: data.output_status ?? "open",
-      tokens_used: data.tokens_used ?? null,
+      work_type: data.workType,
+      output_repo: data.outputRepo,
+      output_number: data.outputNumber,
+      output_url: data.outputUrl,
+      output_status: data.outputStatus ?? "open",
+      tokens_used: data.tokensUsed ?? null,
       notes: data.notes ?? null,
-      filed_by: data.filed_by ?? null,
+      filed_by: data.filedBy ?? null,
     });
     return Number(result.lastInsertRowid);
   }
