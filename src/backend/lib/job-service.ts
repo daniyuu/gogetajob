@@ -447,6 +447,23 @@ export class JobService {
     `).all() as any[];
   }
 
+  getIssueStats(): { total: number; adopted: number; discussing: number; open: number; closed: number; tokens: number } {
+    const rows = this.db.prepare(
+      "SELECT output_status, tokens_used FROM work_log WHERE work_type = 'issue'"
+    ).all() as { output_status: string | null; tokens_used: number | null }[];
+
+    let adopted = 0, discussing = 0, open = 0, closed = 0, tokens = 0;
+    for (const r of rows) {
+      tokens += r.tokens_used || 0;
+      const s = r.output_status || "open";
+      if (s === "adopted") adopted++;
+      else if (s === "discussing") discussing++;
+      else if (s === "closed" || s === "deleted") closed++;
+      else open++;
+    }
+    return { total: rows.length, adopted, discussing, open, closed, tokens };
+  }
+
   getEnrichedStats(): {
     total_done: number;
     merged: number;
