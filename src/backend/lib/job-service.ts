@@ -346,6 +346,7 @@ export class JobService {
       LEFT JOIN companies c ON j.company_id = c.id
       WHERE w.status = 'done'
         AND (w.pr_number IS NOT NULL OR w.output_number IS NOT NULL)
+        AND COALESCE(w.output_status, '') NOT IN ('deleted')
       ORDER BY w.taken_at DESC
     `).all();
   }

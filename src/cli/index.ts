@@ -593,7 +593,14 @@ program
         else if (newStatus === "closed") issueClosed++;
         else issueOpen++;
       } catch (e: any) {
-        console.log(`  ⚠️  [Issue] ${entry.output_repo}#${entry.output_number} — failed to check`);
+        const msg = String(e.message || e);
+        if (msg.includes("Could not resolve")) {
+          svc.updateOutputStatus(entry.id, "deleted");
+          console.log(`  🗑️  [Issue] ${entry.output_repo}#${entry.output_number} — deleted`);
+          issueClosed++;
+        } else {
+          console.log(`  ⚠️  [Issue] ${entry.output_repo}#${entry.output_number} — failed to check`);
+        }
       }
     }
 
