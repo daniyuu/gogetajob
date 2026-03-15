@@ -128,11 +128,20 @@ export function runMigrations(db: Database.Database): void {
         output_status TEXT,
         output_repo TEXT,
         output_number INTEGER,
+        filed_by TEXT,
         FOREIGN KEY (job_id) REFERENCES jobs(id)
       );
-      INSERT INTO work_log_new SELECT * FROM work_log;
+      INSERT INTO work_log_new SELECT *, NULL FROM work_log;
       DROP TABLE work_log;
       ALTER TABLE work_log_new RENAME TO work_log;
     `);
+  }
+
+  // Migration 5: add filed_by for issue lifecycle tracking
+  // Re-read columns after potential table rebuild
+  const wlCols5 = db.prepare(`PRAGMA table_info(work_log)`).all() as any[];
+  const wlColNames5 = wlCols5.map((c: any) => c.name);
+  if (!wlColNames5.includes('filed_by')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN filed_by TEXT`);
   }
 }

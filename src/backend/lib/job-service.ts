@@ -317,10 +317,11 @@ export class JobService {
     output_status?: string;
     tokens_used?: number;
     notes?: string;
+    filed_by?: string;
   }): number {
     const result = this.db.prepare(`
-      INSERT INTO work_log (job_id, status, work_type, output_repo, output_number, output_url, output_status, tokens_used, notes, completed_at)
-      VALUES (NULL, 'done', $work_type, $output_repo, $output_number, $output_url, $output_status, $tokens_used, $notes, datetime('now'))
+      INSERT INTO work_log (job_id, status, work_type, output_repo, output_number, output_url, output_status, tokens_used, notes, filed_by, completed_at)
+      VALUES (NULL, 'done', $work_type, $output_repo, $output_number, $output_url, $output_status, $tokens_used, $notes, $filed_by, datetime('now'))
     `).run({
       work_type: data.work_type,
       output_repo: data.output_repo,
@@ -329,6 +330,7 @@ export class JobService {
       output_status: data.output_status ?? "open",
       tokens_used: data.tokens_used ?? null,
       notes: data.notes ?? null,
+      filed_by: data.filed_by ?? null,
     });
     return Number(result.lastInsertRowid);
   }
@@ -353,6 +355,19 @@ export class JobService {
     this.db.prepare(
       "UPDATE work_log SET output_status = $status, pr_status = $status WHERE id = $id"
     ).run({ status, id: workLogId });
+  }
+
+  /** Check if an issue was filed by us and hasn't been adopted yet */
+  isSelfFiledUnadopted(repo: string, issueNumber: number): boolean {
+    const entry = this.db.prepare(`
+      SELECT filed_by, output_status FROM work_log
+      WHERE work_type = 'issue' AND output_repo = $repo AND output_number = $issue
+      ORDER BY id DESC LIMIT 1
+    `).get({ repo, issue: issueNumber }) as { filed_by: string | null; output_status: string | null } | undefined;
+
+    if (!entry || !entry.filed_by) return false; // not self-filed
+    // adopted/discussing means owner responded
+    return !["adopted", "discussing", "closed"].includes(entry.output_status || "");
   }
 
   listWorkHistory(filters: { repo?: string; status?: string } = {}): WorkEntry[] {
