@@ -624,17 +624,31 @@ program
     const svc = getService();
     const stats = svc.getEnrichedStats();
     const basicStats = svc.getStats();
+    const issueStats = svc.getIssueStats();
 
     console.log(`\n📊 Work Stats\n`);
-    console.log(`  📋 Total jobs done: ${stats.total_done}`);
-    console.log(`  ✅ PRs merged:     ${stats.merged}`);
-    console.log(`  🔵 PRs pending:    ${stats.pending}`);
-    console.log(`  ❌ PRs closed:     ${stats.closed}`);
-    console.log(`  🚫 Jobs dropped:   ${basicStats.dropped}`);
+
+    console.log(`  📝 PR Work`);
+    console.log(`    📋 Total PRs:      ${stats.total_done}`);
+    console.log(`    ✅ Merged:         ${stats.merged}`);
+    console.log(`    🔵 Pending:        ${stats.pending}`);
+    console.log(`    ❌ Closed:         ${stats.closed}`);
+    console.log(`    🚫 Dropped:        ${basicStats.dropped}`);
+    console.log(`    🎯 Merge rate:     ${stats.total_done > 0 ? (stats.merge_rate * 100).toFixed(0) + "%" : "N/A"}`);
     console.log();
-    console.log(`  💰 Total tokens:       ${stats.total_tokens.toLocaleString()}`);
-    console.log(`  📈 Tokens per merge:   ${stats.tokens_per_merge > 0 ? stats.tokens_per_merge.toLocaleString() : "N/A (no merges yet)"}`);
-    console.log(`  🎯 Merge rate:         ${stats.total_done > 0 ? (stats.merge_rate * 100).toFixed(0) + "%" : "N/A"}`);
+
+    console.log(`  📋 Issue Work`);
+    console.log(`    📋 Issues filed:   ${issueStats.total}`);
+    console.log(`    🎯 Adopted:        ${issueStats.adopted}`);
+    console.log(`    💬 Discussing:     ${issueStats.discussing}`);
+    console.log(`    🔵 Open:           ${issueStats.open}`);
+    console.log(`    🔒 Closed:         ${issueStats.closed}`);
+    console.log(`    📈 Response rate:  ${issueStats.total > 0 ? (((issueStats.adopted + issueStats.discussing) / issueStats.total) * 100).toFixed(0) + "%" : "N/A"}`);
+    console.log();
+
+    console.log(`  💰 Totals`);
+    console.log(`    🔢 Total tokens:       ${(stats.total_tokens + issueStats.tokens).toLocaleString()}`);
+    console.log(`    📈 Tokens per merge:   ${stats.tokens_per_merge > 0 ? stats.tokens_per_merge.toLocaleString() : "N/A"}`);
 
     if (stats.needs_action > 0) {
       console.log();
