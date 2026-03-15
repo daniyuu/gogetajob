@@ -525,6 +525,31 @@ program
     }
   });
 
+// ========== followup ==========
+program
+  .command("followup <ref>")
+  .description("Record additional effort on a submitted/done task (format: owner/repo#issue_number)")
+  .requiredOption("--tokens <count>", "additional tokens spent")
+  .option("--notes <text>", "what was done in this follow-up")
+  .action((ref: string, opts: any) => {
+    const parsed = parseRef(ref);
+    const svc = getService();
+
+    try {
+      svc.followUp(parsed.owner, parsed.repo, parsed.issue, {
+        tokens: parseInt(opts.tokens),
+        notes: opts.notes,
+      });
+      console.log(`\n📝 Follow-up recorded for ${ref}`);
+      console.log(`   Added tokens: ${parseInt(opts.tokens).toLocaleString()}`);
+      if (opts.notes) console.log(`   Notes: ${opts.notes}`);
+      console.log();
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
 // ========== sync ==========
 program
   .command("sync")
@@ -554,16 +579,32 @@ program
         const status = gh.getPRStatus(prOwner, prRepo, entry.pr_number!);
         svc.updatePRStatus(entry.id, status.state);
 
+        // Auto-transition submitted → done/closed
+        if (entry.status === "submitted" && (status.state === "MERGED" || status.state === "CLOSED")) {
+          svc.finalizeWork(entry.id, status.state);
+        }
+
         const icon = status.state === "MERGED" ? "✅"
           : status.state === "CLOSED" ? "❌"
           : status.needsAction ? "🔴"
           : "🔵";
 
-        console.log(`  ${icon} [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${status.state}`);
+        const statusLabel = entry.status === "submitted" && status.state === "OPEN" ? "SUBMITTED" : status.state;
+        console.log(`  ${icon} [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${statusLabel}`);
 
         if (status.needsAction) {
-          console.log(`     ⚠️  Changes requested!`);
+          console.log(`     ⚠️  Changes requested — follow up needed!`);
           needsAction++;
+        }
+
+        // Check CI status for open PRs
+        if (status.state === "OPEN" && status.ciStatus) {
+          if (status.ciStatus === "FAILURE") {
+            console.log(`     ❌ CI failing — fix needed!`);
+            needsAction++;
+          } else if (status.ciStatus === "PENDING") {
+            console.log(`     ⏳ CI running...`);
+          }
         }
 
         if (status.state === "MERGED") merged++;
