@@ -87,4 +87,51 @@ export function runMigrations(db: Database.Database): void {
   if (!wlColNames.includes('tokens_at_end')) {
     db.exec(`ALTER TABLE work_log ADD COLUMN tokens_at_end INTEGER`);
   }
+
+  // Migration 4: support multiple work types (pr, issue, review)
+  if (!wlColNames.includes('work_type')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN work_type TEXT DEFAULT 'pr'`);
+  }
+  if (!wlColNames.includes('output_url')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN output_url TEXT`);
+  }
+  if (!wlColNames.includes('output_status')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN output_status TEXT`);
+  }
+  if (!wlColNames.includes('output_repo')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN output_repo TEXT`);
+  }
+  if (!wlColNames.includes('output_number')) {
+    db.exec(`ALTER TABLE work_log ADD COLUMN output_number INTEGER`);
+  }
+
+  // Make job_id nullable for non-PR work types
+  const jobIdCol = wlCols.find((c: any) => c.name === 'job_id');
+  if (jobIdCol && (jobIdCol as any).notnull === 1) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS work_log_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER,
+        status TEXT DEFAULT 'taken',
+        pr_number INTEGER,
+        pr_url TEXT,
+        pr_status TEXT,
+        tokens_used INTEGER,
+        notes TEXT,
+        taken_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        tokens_at_start INTEGER,
+        tokens_at_end INTEGER,
+        work_type TEXT DEFAULT 'pr',
+        output_url TEXT,
+        output_status TEXT,
+        output_repo TEXT,
+        output_number INTEGER,
+        FOREIGN KEY (job_id) REFERENCES jobs(id)
+      );
+      INSERT INTO work_log_new SELECT * FROM work_log;
+      DROP TABLE work_log;
+      ALTER TABLE work_log_new RENAME TO work_log;
+    `);
+  }
 }

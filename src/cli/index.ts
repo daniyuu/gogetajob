@@ -517,23 +517,30 @@ program
 // ========== sync ==========
 program
   .command("sync")
-  .description("Check PR statuses and update work log with latest results")
+  .description("Check PR and issue statuses — update work log with latest results")
   .action(() => {
     const svc = getService();
-    const entries = svc.listPRsToSync();
+    const entries = svc.listOutputsToSync();
 
     if (entries.length === 0) {
-      console.log("\nNo PRs to sync.\n");
+      console.log("\nNothing to sync.\n");
       return;
     }
 
-    console.log(`\n🔄 Syncing ${entries.length} PR(s)...\n`);
+    const prEntries = entries.filter((e: any) => e.pr_number && (!e.work_type || e.work_type === "pr"));
+    const issueEntries = entries.filter((e: any) => e.work_type === "issue" && e.output_number);
+
+    const total = prEntries.length + issueEntries.length;
+    console.log(`\n🔄 Syncing ${total} item(s)...\n`);
 
     let merged = 0, needsAction = 0, open = 0, closed = 0;
+    let issueAdopted = 0, issueOpen = 0, issueClosed = 0;
 
-    for (const entry of entries) {
+    for (const entry of prEntries) {
       try {
-        const status = gh.getPRStatus(entry.owner, entry.repo, entry.pr_number!);
+        const [prOwner, prRepo] = (entry.company_name || "").split("/");
+        if (!prOwner || !prRepo) continue;
+        const status = gh.getPRStatus(prOwner, prRepo, entry.pr_number!);
         svc.updatePRStatus(entry.id, status.state);
 
         const icon = status.state === "MERGED" ? "✅"
@@ -541,31 +548,52 @@ program
           : status.needsAction ? "🔴"
           : "🔵";
 
-        console.log(`  ${icon} ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${status.state}`);
+        console.log(`  ${icon} [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${status.state}`);
 
         if (status.needsAction) {
-          console.log(`     ⚠️  Changes requested! Review comments need attention.`);
-          for (const review of status.reviews.filter(r => r.state === "CHANGES_REQUESTED")) {
-            const snippet = review.body.length > 100 ? review.body.slice(0, 100) + "..." : review.body;
-            if (snippet) console.log(`     💬 ${review.author}: ${snippet}`);
-          }
+          console.log(`     ⚠️  Changes requested!`);
           needsAction++;
-        } else if (status.reviews.length > 0) {
-          const lastReview = status.reviews[status.reviews.length - 1];
-          if (lastReview.state === "APPROVED") {
-            console.log(`     👍 Approved by ${lastReview.author}`);
-          }
         }
 
         if (status.state === "MERGED") merged++;
         else if (status.state === "CLOSED") closed++;
         else open++;
       } catch (e: any) {
-        console.log(`  ⚠️  ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — failed to check`);
+        console.log(`  ⚠️  [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — failed to check`);
       }
     }
 
-    console.log(`\n📊 Summary: ${merged} merged | ${open} open | ${closed} closed${needsAction > 0 ? ` | ${needsAction} need action ⚠️` : ""}\n`);
+    for (const entry of issueEntries) {
+      try {
+        const [repoOwner, repoName] = (entry.output_repo || "").split("/");
+        if (!repoOwner || !repoName) continue;
+        const issueData = gh.getIssueStatus(repoOwner, repoName, entry.output_number!);
+        const newStatus = issueData.state === "closed" ? "closed"
+          : issueData.hasLinkedPR ? "adopted"
+          : "open";
+        svc.updateOutputStatus(entry.id, newStatus);
+
+        const icon = newStatus === "adopted" ? "🎯"
+          : newStatus === "closed" ? "🔒"
+          : "🔵";
+        console.log(`  ${icon} [Issue] ${entry.output_repo}#${entry.output_number} — ${newStatus}${issueData.comments > 0 ? ` (${issueData.comments} comments)` : ""}`);
+
+        if (newStatus === "adopted") issueAdopted++;
+        else if (newStatus === "closed") issueClosed++;
+        else issueOpen++;
+      } catch (e: any) {
+        console.log(`  ⚠️  [Issue] ${entry.output_repo}#${entry.output_number} — failed to check`);
+      }
+    }
+
+    console.log(`\n📊 Summary:`);
+    if (prEntries.length > 0) {
+      console.log(`  PRs: ${merged} merged | ${open} open | ${closed} closed${needsAction > 0 ? ` | ${needsAction} need action ⚠️` : ""}`);
+    }
+    if (issueEntries.length > 0) {
+      console.log(`  Issues: ${issueAdopted} adopted | ${issueOpen} open | ${issueClosed} closed`);
+    }
+    console.log();
   });
 
 // ========== stats ==========
@@ -651,12 +679,15 @@ program
   .description("Audit a repo — analyze codebase health and suggest improvements")
   .option("--dir <path>", "work directory", "/tmp/work")
   .option("--create-issues", "create GitHub issues for findings")
+  .option("--tokens <count>", "tokens consumed for this audit (split across created issues)")
   .action((repoArg: string, opts: any) => {
     const [owner, repo] = repoArg.split("/");
     if (!owner || !repo) {
       console.error("Error: format should be owner/repo");
       process.exit(1);
     }
+
+    const svc = getService();
 
     console.log(`\n🔍 Auditing ${owner}/${repo}...\n`);
 
@@ -754,6 +785,20 @@ program
             { encoding: "utf-8", timeout: 15000 }
           ).trim();
           console.log(`  ✅ ${url}`);
+
+          // Record as issue-type work entry
+          const issueMatch = url.match(/\/issues\/(\d+)/);
+          if (issueMatch) {
+            svc.recordWork({
+              work_type: "issue",
+              output_repo: `${owner}/${repo}`,
+              output_number: parseInt(issueMatch[1]),
+              output_url: url,
+              output_status: "open",
+              tokens_used: opts.tokens ? Math.round(parseInt(opts.tokens) / findings.length) : undefined,
+              notes: `audit: ${finding.split(" — ")[0]}`,
+            });
+          }
         } catch (e: any) {
           console.log(`  ❌ Failed: ${finding.split(" — ")[0]}`);
         }

@@ -363,3 +363,18 @@ export function getPRStatus(owner: string, repo: string, prNumber: number): PRSt
     lastUpdated: data.updatedAt || "",
   };
 }
+
+/** Get issue status — is it open, closed, has someone started working on it? */
+export function getIssueStatus(owner: string, repo: string, issueNumber: number): {
+  state: string;
+  comments: number;
+  hasLinkedPR: boolean;
+} {
+  const data = ghJson(
+    `issue view ${issueNumber} -R ${owner}/${repo} --json state,comments`
+  );
+  const state = (data.state || "OPEN").toLowerCase();
+  const comments = data.comments?.length ?? 0;
+  const { hasPR } = checkLinkedPRs(owner, repo, issueNumber);
+  return { state, comments, hasLinkedPR: hasPR };
+}

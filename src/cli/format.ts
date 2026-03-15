@@ -57,7 +57,7 @@ export function formatCompany(company: CompanyProfile): string {
     .join("\n");
 }
 
-export function formatWorkEntry(entry: WorkEntry): string {
+export function formatWorkEntry(entry: any): string {
   const statusIcon: Record<string, string> = {
     taken: "🔵",
     in_progress: "🟡",
@@ -65,11 +65,23 @@ export function formatWorkEntry(entry: WorkEntry): string {
     dropped: "❌",
   };
   const icon = statusIcon[entry.status] || "⚪";
-  const pr = entry.pr_number ? chalk.cyan(` PR #${entry.pr_number}`) : "";
   const tokens = entry.tokens_used ? chalk.gray(` (${entry.tokens_used} tokens)`) : "";
+  const workType = entry.work_type || "pr";
 
+  if (workType === "issue") {
+    const outputStatus = entry.output_status ? chalk.gray(` [${entry.output_status}]`) : "";
+    return [
+      `${icon} [Issue] ${chalk.bold(entry.output_repo || entry.company_name || "")} #${entry.output_number || ""}${outputStatus}${tokens}`,
+      entry.notes ? `  📝 ${entry.notes}` : null,
+      `  ${chalk.gray(`created: ${entry.completed_at || entry.taken_at}`)}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  const pr = entry.pr_number ? chalk.cyan(` PR #${entry.pr_number}`) : "";
   return [
-    `${icon} ${chalk.bold(entry.company_name || "")} #${entry.issue_number || ""}${pr}${tokens}`,
+    `${icon} [PR] ${chalk.bold(entry.company_name || "")} #${entry.issue_number || ""}${pr}${tokens}`,
     `  ${entry.job_title || ""}`,
     `  ${chalk.gray(`taken: ${entry.taken_at}`)}${entry.completed_at ? chalk.gray(` → ${entry.completed_at}`) : ""}`,
     entry.notes ? `  📝 ${entry.notes}` : null,
