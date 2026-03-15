@@ -269,6 +269,24 @@ export class JobService {
     return row || null;
   }
 
+  guessRepoForIssue(issueNumber: number): { owner: string; repo: string } | null {
+    // Try work_log first (e.g., self-filed issues that haven't been scanned yet)
+    const row = this.db.prepare(`
+      SELECT output_repo FROM work_log
+      WHERE output_number = $issue AND work_type = 'issue' AND output_repo IS NOT NULL
+      ORDER BY id DESC LIMIT 1
+    `).get({ issue: issueNumber }) as { output_repo: string } | undefined;
+    if (row?.output_repo) {
+      const [owner, repo] = row.output_repo.split("/");
+      if (owner && repo) return { owner, repo };
+    }
+    // Fallback: most recently scanned company
+    const company = this.db.prepare(`
+      SELECT owner, repo FROM companies ORDER BY last_scanned_at DESC LIMIT 1
+    `).get() as { owner: string; repo: string } | undefined;
+    return company || null;
+  }
+
   // --- Work Log ---
 
   takeJob(jobId: number): number {
