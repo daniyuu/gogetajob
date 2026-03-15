@@ -449,7 +449,7 @@ export class JobService {
     `).all() as any[];
   }
 
-  getIssueStats(): { total: number; adopted: number; discussing: number; open: number; closed: number; tokens: number } {
+  getIssueStats(): { total: number; adopted: number; discussing: number; open: number; closed: number; responded: number; tokens: number } {
     const rows = this.db.prepare(
       "SELECT output_status, tokens_used FROM work_log WHERE work_type = 'issue'"
     ).all() as { output_status: string | null; tokens_used: number | null }[];
@@ -463,7 +463,9 @@ export class JobService {
       else if (s === "closed" || s === "deleted") closed++;
       else open++;
     }
-    return { total: rows.length, adopted, discussing, open, closed, tokens };
+    // responded = any issue that got past "open" state (adopted, discussing, closed all count)
+    const responded = adopted + discussing + closed;
+    return { total: rows.length, adopted, discussing, open, closed, responded, tokens };
   }
 
   getEnrichedStats(): {
