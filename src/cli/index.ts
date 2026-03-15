@@ -643,7 +643,7 @@ program
     console.log(`    💬 Discussing:     ${issueStats.discussing}`);
     console.log(`    🔵 Open:           ${issueStats.open}`);
     console.log(`    🔒 Closed:         ${issueStats.closed}`);
-    console.log(`    📈 Response rate:  ${issueStats.total > 0 ? (((issueStats.adopted + issueStats.discussing) / issueStats.total) * 100).toFixed(0) + "%" : "N/A"}`);
+    console.log(`    📈 Response rate:  ${issueStats.total > 0 ? ((issueStats.responded / issueStats.total) * 100).toFixed(0) + "%" : "N/A"}`);
     console.log();
 
     console.log(`  💰 Totals`);
