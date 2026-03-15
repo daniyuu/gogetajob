@@ -491,6 +491,7 @@ export class JobService {
     }
 
     const totalDone = rows.length;
+    const concluded = merged + closed; // only count finished PRs for merge rate
     return {
       total_done: totalDone,
       merged,
@@ -498,7 +499,7 @@ export class JobService {
       closed,
       total_tokens: totalTokens,
       tokens_per_merge: merged > 0 ? Math.round(totalTokens / merged) : 0,
-      merge_rate: totalDone > 0 ? merged / totalDone : 0,
+      merge_rate: concluded > 0 ? merged / concluded : 0,
       needs_action: needsAction,
     };
   }
