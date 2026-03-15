@@ -314,7 +314,7 @@ export class JobService {
 
     this.db.prepare(`
       UPDATE work_log SET
-        status = 'done',
+        status = 'submitted',
         pr_number = COALESCE($pr_number, pr_number),
         pr_url = COALESCE($pr_url, pr_url),
         tokens_used = COALESCE($tokens_used, tokens_used),
@@ -328,6 +328,33 @@ export class JobService {
       notes: data.notes ?? null,
       id: entry.id,
     });
+  }
+
+  /** Add follow-up tokens and notes to an existing work entry */
+  followUp(owner: string, repo: string, issueNumber: number, data: {
+    tokens: number;
+    notes?: string;
+  }): void {
+    // Find the latest work entry for this issue
+    const entry = this.db.prepare(`
+      SELECT wl.id, wl.tokens_used, wl.notes FROM work_log wl
+      JOIN jobs j ON wl.job_id = j.id
+      JOIN companies c ON j.company_id = c.id
+      WHERE c.owner = $owner AND c.repo = $repo AND j.issue_number = $issue_number
+        AND wl.status IN ('submitted', 'done')
+      ORDER BY wl.taken_at DESC LIMIT 1
+    `).get({ owner, repo, issue_number: issueNumber }) as { id: number; tokens_used: number | null; notes: string | null } | undefined;
+
+    if (!entry) throw new Error(`No work entry found for ${owner}/${repo}#${issueNumber}`);
+
+    const newTokens = (entry.tokens_used || 0) + data.tokens;
+    const newNotes = data.notes
+      ? `${entry.notes || ''}\n[follow-up] ${data.notes}`.trim()
+      : entry.notes;
+
+    this.db.prepare(`
+      UPDATE work_log SET tokens_used = $tokens, notes = $notes WHERE id = $id
+    `).run({ tokens: newTokens, notes: newNotes, id: entry.id });
   }
 
   dropJob(jobId: number): void {
@@ -377,7 +404,7 @@ export class JobService {
       FROM work_log w
       LEFT JOIN jobs j ON w.job_id = j.id AND w.job_id > 0
       LEFT JOIN companies c ON j.company_id = c.id
-      WHERE w.status = 'done'
+      WHERE w.status IN ('done', 'submitted')
         AND (w.pr_number IS NOT NULL OR w.output_number IS NOT NULL)
         AND COALESCE(w.output_status, '') NOT IN ('deleted')
         AND COALESCE(w.pr_status, '') NOT IN ('MERGED', 'CLOSED')
@@ -391,6 +418,14 @@ export class JobService {
     this.db.prepare(
       "UPDATE work_log SET output_status = $status, pr_status = $status WHERE id = $id"
     ).run({ status, id: workLogId });
+  }
+
+  /** Transition a submitted work entry to done (merged) or closed */
+  finalizeWork(workLogId: number, prStatus: string): void {
+    const newStatus = prStatus === 'MERGED' ? 'done' : prStatus === 'CLOSED' ? 'done' : 'submitted';
+    this.db.prepare(
+      "UPDATE work_log SET status = $status, pr_status = $pr_status WHERE id = $id"
+    ).run({ status: newStatus, pr_status: prStatus.toLowerCase(), id: workLogId });
   }
 
   /** Check if an issue was filed by us and hasn't been adopted yet */
@@ -508,7 +543,7 @@ export class JobService {
     const rows = this.db.prepare(`
       SELECT pr_status, tokens_used
       FROM work_log
-      WHERE status = 'done' AND pr_number IS NOT NULL
+      WHERE status IN ('done', 'submitted') AND pr_number IS NOT NULL
     `).all() as any[];
 
     let merged = 0, pending = 0, closed = 0, totalTokens = 0, needsAction = 0;

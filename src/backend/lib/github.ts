@@ -333,13 +333,14 @@ export interface PRStatusInfo {
     body: string;
   }>;
   needsAction: boolean;  // true if there are unaddressed review requests
+  ciStatus: string | null; // SUCCESS | FAILURE | PENDING | null
   lastUpdated: string;
 }
 
-/** Get detailed PR status including reviews */
+/** Get detailed PR status including reviews and CI */
 export function getPRStatus(owner: string, repo: string, prNumber: number): PRStatusInfo {
   const data = ghJson(
-    `pr view ${prNumber} -R ${owner}/${repo} --json number,state,mergedAt,closedAt,reviews,comments,updatedAt`
+    `pr view ${prNumber} -R ${owner}/${repo} --json number,state,mergedAt,closedAt,reviews,comments,updatedAt,statusCheckRollup`
   );
 
   const reviews = (data.reviews || []).map((r: any) => ({
@@ -352,6 +353,16 @@ export function getPRStatus(owner: string, repo: string, prNumber: number): PRSt
   const lastReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
   const needsAction = lastReview?.state === "CHANGES_REQUESTED";
 
+  // Parse CI status from statusCheckRollup
+  let ciStatus: string | null = null;
+  const checks = data.statusCheckRollup || [];
+  if (checks.length > 0) {
+    const hasFailure = checks.some((c: any) => c.conclusion === "FAILURE" || c.conclusion === "ERROR");
+    const allSuccess = checks.every((c: any) => c.conclusion === "SUCCESS" || c.conclusion === "NEUTRAL" || c.conclusion === "SKIPPED");
+    const hasPending = checks.some((c: any) => c.status === "IN_PROGRESS" || c.status === "QUEUED" || c.status === "PENDING");
+    ciStatus = hasFailure ? "FAILURE" : allSuccess ? "SUCCESS" : hasPending ? "PENDING" : null;
+  }
+
   return {
     number: data.number,
     state: data.mergedAt ? "MERGED" : data.state,
@@ -360,6 +371,7 @@ export function getPRStatus(owner: string, repo: string, prNumber: number): PRSt
     reviewComments: data.comments?.totalCount ?? 0,
     reviews,
     needsAction,
+    ciStatus,
     lastUpdated: data.updatedAt || "",
   };
 }
