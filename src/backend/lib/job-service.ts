@@ -404,10 +404,10 @@ export class JobService {
       FROM work_log w
       LEFT JOIN jobs j ON w.job_id = j.id AND w.job_id > 0
       LEFT JOIN companies c ON j.company_id = c.id
-      WHERE w.status IN ('done', 'submitted')
+      WHERE w.status IN ('taken', 'done', 'submitted')
         AND (w.pr_number IS NOT NULL OR w.output_number IS NOT NULL)
         AND COALESCE(w.output_status, '') NOT IN ('deleted')
-        AND COALESCE(w.pr_status, '') NOT IN ('MERGED', 'CLOSED')
+        AND COALESCE(w.pr_status, '') NOT IN ('MERGED', 'CLOSED', 'merged', 'closed')
         AND COALESCE(w.output_status, '') NOT IN ('closed')
       ORDER BY w.taken_at DESC
     `).all();

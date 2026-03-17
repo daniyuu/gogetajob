@@ -630,13 +630,21 @@ program
 
     for (const entry of prEntries) {
       try {
-        const [prOwner, prRepo] = (entry.company_name || "").split("/");
+        let prOwner = "", prRepo = "";
+        if (entry.company_name) {
+          [prOwner, prRepo] = entry.company_name.split("/");
+        }
+        // Fallback: parse from pr_url (e.g. https://github.com/owner/repo/pull/1)
+        if ((!prOwner || !prRepo) && entry.pr_url) {
+          const m = entry.pr_url.match(/github\.com\/([^/]+)\/([^/]+)\/pull/);
+          if (m) { prOwner = m[1]; prRepo = m[2]; }
+        }
         if (!prOwner || !prRepo) continue;
         const status = gh.getPRStatus(prOwner, prRepo, entry.pr_number!);
         svc.updatePRStatus(entry.id, status.state);
 
-        // Auto-transition submitted → done/closed
-        if (entry.status === "submitted" && (status.state === "MERGED" || status.state === "CLOSED")) {
+        // Auto-transition taken/submitted → done/closed
+        if ((entry.status === "submitted" || entry.status === "taken") && (status.state === "MERGED" || status.state === "CLOSED")) {
           svc.finalizeWork(entry.id, status.state);
         }
 
@@ -645,8 +653,9 @@ program
           : status.needsAction ? "🔴"
           : "🔵";
 
-        const statusLabel = entry.status === "submitted" && status.state === "OPEN" ? "SUBMITTED" : status.state;
-        console.log(`  ${icon} [PR] ${entry.company_name}#${entry.issue_number} PR #${entry.pr_number} — ${statusLabel}`);
+        const statusLabel = (entry.status === "submitted" || entry.status === "taken") && status.state === "OPEN" ? "PENDING" : status.state;
+        const displayName = prOwner + "/" + prRepo;
+        console.log(`  ${icon} [PR] ${displayName}#${entry.issue_number || '?'} PR #${entry.pr_number} — ${statusLabel}`);
 
         if (status.needsAction) {
           console.log(`     ⚠️  Changes requested — follow up needed!`);
