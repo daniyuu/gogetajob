@@ -315,8 +315,21 @@ export function pushAndCreatePR(
     timeout: 30000,
   });
 
-  // Create PR — use forkOwner:branch as head so GitHub knows which fork
+  // Check if a PR already exists from this branch
   const headRef = forkOwner === upstreamOwner ? branch : `${forkOwner}:${branch}`;
+  try {
+    const existingPR = exec(
+      `gh pr list -R ${upstreamOwner}/${upstreamRepo} --head ${headRef} --json url --jq '.[0].url'`,
+      { cwd: repoDir, encoding: "utf-8", timeout: 15000, stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+    if (existingPR) {
+      return existingPR; // PR already exists, return its URL
+    }
+  } catch {
+    // No existing PR found, create one
+  }
+
+  // Create PR
   const prUrl = exec(
     `gh pr create -R ${upstreamOwner}/${upstreamRepo} --head ${headRef} --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}"`,
     { cwd: repoDir, encoding: "utf-8", timeout: 30000 },
