@@ -658,7 +658,17 @@ program
         console.log(`  ${icon} [PR] ${displayName}#${entry.issue_number || '?'} PR #${entry.pr_number} — ${statusLabel}`);
 
         if (status.needsAction) {
-          console.log(`     ⚠️  Changes requested — follow up needed!`);
+          const hasChangesReq = status.reviews.some((r: any) => r.state === "CHANGES_REQUESTED");
+          if (hasChangesReq) {
+            console.log(`     ⚠️  Changes requested — follow up needed!`);
+          } else {
+            // Has review comments/suggestions
+            const commentReviews = status.reviews.filter((r: any) => r.state === "COMMENTED" && r.body.length > 0);
+            console.log(`     💬 ${commentReviews.length} review comment(s) — check and respond!`);
+            for (const r of commentReviews.slice(0, 3)) {
+              console.log(`        ${r.author}: ${r.body.slice(0, 80)}${r.body.length > 80 ? "..." : ""}`);
+            }
+          }
           needsAction++;
         }
 

@@ -353,9 +353,13 @@ export function getPRStatus(owner: string, repo: string, prNumber: number): PRSt
     body: r.body || "",
   }));
 
-  // Needs action if latest review is CHANGES_REQUESTED
+  // Needs action if:
+  // 1. Latest review is CHANGES_REQUESTED, or
+  // 2. There are COMMENTED reviews with suggestions (owner feedback we should respond to)
   const lastReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
-  const needsAction = lastReview?.state === "CHANGES_REQUESTED";
+  const hasChangesRequested = reviews.some((r: any) => r.state === "CHANGES_REQUESTED");
+  const hasReviewComments = reviews.some((r: any) => r.state === "COMMENTED" && r.body.length > 0);
+  const needsAction = hasChangesRequested || hasReviewComments;
 
   // Parse CI status from statusCheckRollup
   let ciStatus: string | null = null;
