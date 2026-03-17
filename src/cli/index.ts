@@ -112,7 +112,13 @@ program
 // ========== scan ==========
 program
   .command("scan <repo>")
-  .description("Scan a repo for open issues and add them as jobs")
+  .description(
+    "Scan a repo for open issues and add them as jobs (format: owner/repo)\n\n" +
+    "  Finding repos to scan:\n" +
+    "    gh search repos --topic=typescript --sort=stars --limit=10\n" +
+    "    gh search repos --language=python --stars='>100' --limit=10\n" +
+    "    Browse https://github.com/trending"
+  )
   .option("--refresh", "force refresh existing data")
   .option("--label <label>", "only issues with this label")
   .action(async (repoArg: string, opts: any) => {
@@ -224,13 +230,53 @@ program
 
     // Verdict
     console.log();
+    const verdicts: string[] = [];
+    let signal: "go" | "caution" | "skip" = "go";
+
     if (prInfo.hasPR) {
-      console.log("⚠️  Verdict: Someone may already be working on this. Check the PR(s) before proceeding.");
-    } else if (job.comments_count > 10) {
-      console.log("🤔 Verdict: Lots of discussion. Read the comments to understand context.");
-    } else {
-      console.log("✅ Verdict: Looks open. Go for it!");
+      verdicts.push("Someone may already be working on this (linked PR exists)");
+      signal = "caution";
     }
+    if (job.comments_count > 10) {
+      verdicts.push("Lots of discussion — read comments first");
+      if (signal === "go") signal = "caution";
+    }
+    if (company) {
+      if (company.pr_merge_rate !== null && company.pr_merge_rate < 0.2) {
+        verdicts.push(`Very low merge rate (${(company.pr_merge_rate * 100).toFixed(0)}%) — your PR may not get reviewed`);
+        signal = "skip";
+      } else if (company.pr_merge_rate !== null && company.pr_merge_rate < 0.5) {
+        verdicts.push(`Low merge rate (${(company.pr_merge_rate * 100).toFixed(0)}%)`);
+        if (signal === "go") signal = "caution";
+      }
+      if (company.has_cla) {
+        verdicts.push("Requires CLA — check if you can sign it");
+        if (signal === "go") signal = "caution";
+      }
+      // Stale repo check
+      if (company.last_commit_at) {
+        const daysSince = Math.floor((Date.now() - new Date(company.last_commit_at).getTime()) / 86400000);
+        if (daysSince > 180) {
+          verdicts.push(`No commits in ${daysSince} days — project may be abandoned`);
+          signal = "skip";
+        } else if (daysSince > 60) {
+          verdicts.push(`Last commit ${daysSince} days ago — may be slow to review`);
+          if (signal === "go") signal = "caution";
+        }
+      }
+    }
+    if (!job.body || job.body.trim().length < 50) {
+      verdicts.push("Vague issue description — unclear scope");
+      if (signal === "go") signal = "caution";
+    }
+
+    if (verdicts.length === 0) {
+      verdicts.push("Looks open and healthy. Go for it!");
+    }
+
+    const icon = signal === "go" ? "✅" : signal === "caution" ? "⚠️ " : "🚫";
+    console.log(`${icon} Verdict: ${signal.toUpperCase()}`);
+    verdicts.forEach((v) => console.log(`   • ${v}`));
     console.log();
   });
 
