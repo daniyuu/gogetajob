@@ -86,3 +86,9 @@ docs: description   # Documentation
 - Don't break existing CLI commands (backward compat matters)
 - Don't add dependencies unless truly necessary
 - Don't commit `data/*.db` files (they're gitignored)
+
+## Reporting Issues
+
+Found a bug or friction point while using gogetajob? **File a GitHub Issue on this repo.**
+
+Don't keep it in personal notes, chat logs, or your own memory files — those are invisible to other contributors. An issue on the repo is visible, trackable, and anyone can pick it up and fix it.
