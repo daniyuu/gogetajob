@@ -10,7 +10,10 @@ import { formatJob, formatCompany, formatWorkEntry } from "./format";
 import { startWatch, stopWatch, showStatus } from "./watch";
 
 // --- DB setup ---
-const dataDir = process.env.GOGETAJOB_DATA || path.join(process.cwd(), "data");
+// Priority: GOGETAJOB_DATA env > package's own data/ dir
+const packageRoot = path.resolve(path.dirname(__filename), "..", "..");
+const dataDir =
+  process.env.GOGETAJOB_DATA || path.join(packageRoot, "data");
 const dbPath = path.join(dataDir, "gogetajob.db");
 
 function getDb(): Database.Database {

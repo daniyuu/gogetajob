@@ -35,9 +35,13 @@ export interface PrStats {
 
 function gh(args: string): string {
   try {
-    return execSync(`gh ${args}`, { encoding: "utf-8", timeout: 30000 }).trim();
+    return execSync(`gh ${args}`, {
+      encoding: "utf-8",
+      timeout: 30000,
+      stdio: ["pipe", "pipe", "pipe"], // capture stderr to avoid noisy 404s
+    }).trim();
   } catch (e: any) {
-    throw new Error(`gh command failed: ${e.message}`);
+    throw new Error(`gh command failed: ${e.stderr || e.message}`);
   }
 }
 
