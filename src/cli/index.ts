@@ -27,6 +27,21 @@ function getService(): JobService {
   return new JobService(getDb());
 }
 
+// --- Self-update check ---
+function checkForUpdates(): void {
+  try {
+    const { execSync } = require("child_process");
+    const local = execSync("git rev-parse HEAD", { cwd: packageRoot, encoding: "utf-8" }).trim();
+    execSync("git fetch origin main --quiet", { cwd: packageRoot, encoding: "utf-8", timeout: 5000 });
+    const remote = execSync("git rev-parse origin/main", { cwd: packageRoot, encoding: "utf-8" }).trim();
+    if (local !== remote) {
+      console.log("⚠️  gogetajob is outdated. Run: cd " + packageRoot + " && git pull && npm run build\n");
+    }
+  } catch {
+    // Silently skip if not a git repo or offline
+  }
+}
+
 // --- CLI ---
 const program = new Command();
 
@@ -1039,6 +1054,8 @@ program
     }
   });
 
+// Check for updates before running any command
+checkForUpdates();
 program.parseAsync();
 
 // === Helpers ===
