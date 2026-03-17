@@ -1,0 +1,3 @@
+#!/bin/sh
+# Pre-commit: ensure the project builds
+npm run build
