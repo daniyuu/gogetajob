@@ -257,9 +257,12 @@ program
       if (signal === "go") signal = "caution";
     }
     if (company) {
-      if (company.pr_merge_rate !== null && company.pr_merge_rate < 0.2) {
+      if (company.pr_merge_rate !== null && company.pr_merge_rate < 0.2 && company.forks > 1) {
         verdicts.push(`Very low merge rate (${(company.pr_merge_rate * 100).toFixed(0)}%) — your PR may not get reviewed`);
         signal = "skip";
+      } else if (company.pr_merge_rate !== null && company.pr_merge_rate === 0 && company.forks <= 1) {
+        verdicts.push("New repo — no PR history yet, review speed unknown");
+        if (signal === "go") signal = "caution";
       } else if (company.pr_merge_rate !== null && company.pr_merge_rate < 0.5) {
         verdicts.push(`Low merge rate (${(company.pr_merge_rate * 100).toFixed(0)}%)`);
         if (signal === "go") signal = "caution";
