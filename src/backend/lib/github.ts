@@ -433,6 +433,76 @@ export interface MyPRInfo {
   linkedIssueNumber: number | null;
 }
 
+export interface SearchRepoResult {
+  owner: string;
+  repo: string;
+  description: string;
+  language: string;
+  stars: number;
+  forks: number;
+  lastPush: string;
+}
+
+/** Search GitHub for repos matching criteria using `gh search repos` */
+export function searchRepos(opts: {
+  language?: string;
+  minStars?: number;
+  maxStars?: number;
+  activeDays?: number;
+  limit?: number;
+  topic?: string;
+}): SearchRepoResult[] {
+  const parts: string[] = ["search", "repos"];
+
+  // Build query string (inline qualifiers) and flags
+  const queryParts: string[] = [];
+  const minStars = opts.minStars ?? 5;
+  const maxStars = opts.maxStars ?? 5000;
+  queryParts.push(`stars:${minStars}..${maxStars}`);
+  if (opts.activeDays) {
+    const since = new Date(Date.now() - opts.activeDays * 86400000).toISOString().split("T")[0];
+    queryParts.push(`pushed:>=${since}`);
+  }
+  if (opts.topic) queryParts.push(`topic:${opts.topic}`);
+
+  // Query goes as a quoted argument
+  parts.push(`"${queryParts.join(" ")}"`);
+
+  // Language goes as a flag (gh search repos --language)
+  if (opts.language) {
+    parts.push("--language", opts.language);
+  }
+
+  parts.push("--sort", "stars", "--order", "desc");
+  parts.push("--limit", String(opts.limit ?? 10));
+  parts.push("--json", "owner,name,description,language,stargazersCount,forksCount,pushedAt,fullName");
+
+  const data = ghJson(parts.join(" "));
+  if (!Array.isArray(data)) return [];
+
+  return data.map((d: any) => ({
+    owner: d.owner?.login || d.owner || "",
+    repo: d.name || "",
+    description: d.description || "",
+    language: d.language || "Unknown",
+    stars: d.stargazersCount ?? 0,
+    forks: d.forksCount ?? 0,
+    lastPush: d.pushedAt || "",
+  }));
+}
+
+/** Count open issues with a specific label */
+export function countLabeledIssues(owner: string, repo: string, label: string): number {
+  try {
+    const data = ghJson(
+      `issue list -R ${owner}/${repo} --state open --label "${label}" --limit 100 --json number`
+    );
+    return Array.isArray(data) ? data.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function getMyPRs(owner: string, repo: string): MyPRInfo[] {
   const myLogin = getMyLogin();
   const raw = ghJson(
