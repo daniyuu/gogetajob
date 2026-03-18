@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gogetajob — 打工看板</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --pink: #f778ba;
+    --cyan: #39d2c0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header h1 .emoji { font-size: 28px; }
+  .refresh-info {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pulse {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Overview cards */
+  .overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 16px;
+    text-align: center;
+  }
+  .card .label {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .card .value {
+    font-size: 28px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .card .sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .card.green .value { color: var(--green); }
+  .card.blue .value { color: var(--blue); }
+  .card.red .value { color: var(--red); }
+  .card.orange .value { color: var(--orange); }
+  .card.purple .value { color: var(--purple); }
+  .card.cyan .value { color: var(--cyan); }
+
+  /* Section */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .section h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge.merged { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge.open { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .badge.closed { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge.dropped { background: rgba(139,148,158,0.15); color: var(--text-dim); }
+  .badge.taken { background: rgba(210,153,34,0.15); color: var(--orange); }
+
+  /* Links */
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Daily chart */
+  .chart-container {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 120px;
+    padding-top: 10px;
+  }
+  .chart-bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+    height: 100%;
+  }
+  .chart-bar {
+    width: 100%;
+    max-width: 48px;
+    border-radius: 4px 4px 0 0;
+    background: linear-gradient(180deg, var(--accent) 0%, rgba(88,166,255,0.5) 100%);
+    transition: height 0.5s ease;
+    position: relative;
+    min-height: 2px;
+    flex-shrink: 0;
+  }
+  .chart-bar:hover { background: var(--cyan); }
+  .chart-bar .tooltip {
+    display: none;
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    z-index: 10;
+  }
+  .chart-bar:hover .tooltip { display: block; }
+  .chart-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* Token breakdown */
+  .token-bar-container {
+    margin-top: 12px;
+  }
+  .token-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .token-row .name {
+    font-size: 12px;
+    color: var(--text-dim);
+    width: 200px;
+    flex-shrink: 0;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .token-row .bar-track {
+    flex: 1;
+    height: 16px;
+    background: rgba(48,54,61,0.6);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .token-row .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--purple), var(--pink));
+    transition: width 0.5s ease;
+    display: flex;
+    align-items: center;
+    padding-left: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .container { padding: 12px; }
+    .overview { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .card { padding: 12px; }
+    .card .value { font-size: 22px; }
+    table { font-size: 12px; }
+    td, th { padding: 6px; }
+    .token-row .name { width: 120px; }
+    .pr-title { max-width: 200px; }
+  }
+
+  .pr-title {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Company table extras */
+  .stars { color: var(--orange); }
+  .merge-rate-bar {
+    display: inline-block;
+    width: 60px;
+    height: 6px;
+    background: rgba(48,54,61,0.8);
+    border-radius: 3px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  .merge-rate-bar .fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--green);
+  }
+
+  /* Two column layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
+
+  .loading {
+    text-align: center;
+    padding: 60px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .number { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1><span class="emoji">⚒️</span> gogetajob 打工看板</h1>
+    <div class="refresh-info">
+      <div class="pulse"></div>
+      <span id="last-update">加载中...</span>
+    </div>
+  </header>
+  <div id="app"><div class="loading">⏳ 加载数据中...</div></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let DATA = null;
+
+function fmt(n) {
+  if (n == null) return '—';
+  return n.toLocaleString('en-US');
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s.includes('T') ? s : s + 'Z');
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  const h = String(d.getHours()).padStart(2,'0');
+  const min = String(d.getMinutes()).padStart(2,'0');
+  return `${m}-${day} ${h}:${min}`;
+}
+
+function prStatusBadge(w) {
+  const ps = (w.pr_status || '').toLowerCase();
+  const st = (w.status || '').toLowerCase();
+  if (ps === 'merged') return '<span class="badge merged">MERGED</span>';
+  if (ps === 'open' || st === 'submitted') return '<span class="badge open">OPEN</span>';
+  if (ps === 'closed') return '<span class="badge closed">CLOSED</span>';
+  if (st === 'dropped') return '<span class="badge dropped">DROPPED</span>';
+  if (st === 'taken') return '<span class="badge taken">进行中</span>';
+  return '<span class="badge dropped">—</span>';
+}
+
+function render(data) {
+  const o = data.overview;
+  const app = $('#app');
+
+  // Build daily chart — fill missing days
+  const dailyMap = {};
+  data.daily.forEach(d => dailyMap[d.day] = d.count);
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    days.push({ day: key, count: dailyMap[key] || 0 });
+  }
+  const maxCount = Math.max(...days.map(d=>d.count), 1);
+
+  let html = '';
+
+  // === Overview Cards ===
+  html += `<div class="overview">
+    <div class="card"><div class="label">总 PR</div><div class="value">${o.totalPRs}</div></div>
+    <div class="card green"><div class="label">已合并 ✅</div><div class="value">${o.merged}</div></div>
+    <div class="card blue"><div class="label">待审核</div><div class="value">${o.pending}</div></div>
+    <div class="card red"><div class="label">已关闭</div><div class="value">${o.closed}</div></div>
+    <div class="card orange"><div class="label">合并率</div><div class="value">${o.mergeRate}%</div></div>
+    <div class="card purple"><div class="label">总 Tokens</div><div class="value number">${fmt(o.totalTokens)}</div></div>
+    <div class="card cyan"><div class="label">每 Merge Token</div><div class="value number">${fmt(o.tokensPerMerge)}</div></div>
+  </div>`;
+
+  // === Daily Chart ===
+  html += `<div class="section">
+    <h2>📊 每日提交 (近 14 天)</h2>
+    <div class="chart-container">
+      ${days.map(d => {
+        const h = Math.max(Math.round((d.count / maxCount) * 90), 3);
+        const label = d.day.slice(5); // MM-DD
+        return `<div class="chart-bar-group">
+          <div class="chart-bar" style="height:${h}px"><div class="tooltip">${d.count} PR</div></div>
+          <div class="chart-label">${label}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  // === Two-column: PR Board + Companies ===
+  html += `<div class="two-col">`;
+
+  // PR Board
+  html += `<div class="section" style="grid-column: 1 / -1">
+    <h2>📋 PR 状态板</h2>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>仓库</th><th>Issue</th><th>PR</th><th>状态</th><th>标题</th><th>时间</th><th>Tokens</th>
+      </tr></thead>
+      <tbody>
+      ${data.prs.map(p => `<tr>
+        <td style="white-space:nowrap;font-size:12px;color:var(--text-dim)">${p.repo || '—'}</td>
+        <td>${p.issue_number ? `<a href="${p.issue_url || '#'}" target="_blank">#${p.issue_number}</a>` : '—'}</td>
+        <td>${p.pr_number ? `<a href="${p.pr_url || '#'}" target="_blank">#${p.pr_number}</a>` : '—'}</td>
+        <td>${prStatusBadge(p)}</td>
+        <td class="pr-title" title="${(p.title||'').replace(/"/g,'&quot;')}">${p.title || '—'}</td>
+        <td style="white-space:nowrap;font-size:12px;color:var(--text-dim)">${fmtDate(p.taken_at)}</td>
+        <td class="number" style="font-size:12px">${p.tokens_used ? fmt(p.tokens_used) : '—'}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+
+  html += `</div>`; // end two-col
+
+  // === Another two-col: Companies + Token Breakdown ===
+  html += `<div class="two-col">`;
+
+  // Companies
+  html += `<div class="section">
+    <h2>🏢 目标公司</h2>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>仓库</th><th>⭐</th><th>项目合并率</th><th>我们的 PR</th><th>我们合并</th><th>Tokens</th></tr></thead>
+      <tbody>
+      ${data.companies.filter(c => c.our_prs > 0).map(c => {
+        const rate = c.pr_merge_rate != null ? (c.pr_merge_rate * 100).toFixed(0) : '—';
+        const ourRate = c.our_prs > 0 ? ((c.our_merged / c.our_prs) * 100).toFixed(0) : '—';
+        return `<tr>
+          <td style="font-size:12px"><a href="https://github.com/${c.full_name}" target="_blank">${c.full_name}</a></td>
+          <td class="stars number">${fmt(c.stars)}</td>
+          <td>
+            <div class="merge-rate-bar"><div class="fill" style="width:${rate === '—' ? 0 : rate}%"></div></div>
+            <span style="font-size:11px">${rate}%</span>
+          </td>
+          <td class="number">${c.our_prs}</td>
+          <td class="number" style="color:var(--green)">${c.our_merged}</td>
+          <td class="number" style="font-size:12px">${fmt(c.tokens_spent)}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+
+  // Token Breakdown
+  const maxTokens = Math.max(...data.tokensByCompany.map(t=>t.tokens), 1);
+  html += `<div class="section">
+    <h2>💰 Token 消费分布</h2>
+    <div style="margin-bottom:12px;display:flex;gap:24px;font-size:13px">
+      <div>总计: <strong style="color:var(--purple)">${fmt(o.totalTokens)}</strong></div>
+      <div>今日: <strong style="color:var(--pink)">${fmt(data.tokensToday)}</strong></div>
+    </div>
+    <div class="token-bar-container">
+      ${data.tokensByCompany.map(t => {
+        const pct = (t.tokens / maxTokens * 100).toFixed(1);
+        const name = t.repo ? t.repo.split('/').pop() : '未知';
+        return `<div class="token-row">
+          <div class="name" title="${t.repo || ''}">${name}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%">${fmt(t.tokens)}</div></div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  html += `</div>`; // end two-col
+
+  app.innerHTML = html;
+}
+
+async function fetchData() {
+  try {
+    const res = await fetch('/api/data');
+    DATA = await res.json();
+    if (DATA.error) {
+      $('#app').innerHTML = `<div class="loading" style="color:var(--red)">❌ ${DATA.error}</div>`;
+      return;
+    }
+    render(DATA);
+    const now = new Date();
+    const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+    $('#last-update').textContent = `更新于 ${ts} · 每 30 秒刷新`;
+  } catch(e) {
+    $('#app').innerHTML = `<div class="loading" style="color:var(--red)">❌ 连接失败: ${e.message}</div>`;
+  }
+}
+
+fetchData();
+setInterval(fetchData, 30000);
+</script>
+</body>
+</html>

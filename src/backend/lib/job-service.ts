@@ -623,7 +623,7 @@ export class JobService {
       VALUES ($job_id, $status, $pr_number, $pr_url, $pr_status, $notes, $taken_at, $completed_at, 'pr')
     `).run({
       job_id: jobId,
-      status: data.prStatus === "MERGED" || data.prStatus === "CLOSED" ? "done" : "taken",
+      status: data.prStatus === "MERGED" || data.prStatus === "CLOSED" ? "done" : "submitted",
       pr_number: data.prNumber,
       pr_url: data.prUrl,
       pr_status: data.prStatus.toLowerCase(),

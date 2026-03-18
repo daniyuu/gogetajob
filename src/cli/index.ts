@@ -126,9 +126,10 @@ program
 
 // ========== scan ==========
 program
-  .command("scan <repo>")
+  .command("scan [repo]")
   .description(
     "Scan a repo for open issues and add them as jobs (format: owner/repo)\n\n" +
+    "  Use --all to scan all known companies from the database.\n\n" +
     "  Finding repos to scan:\n" +
     "    gh search repos --topic=typescript --sort=stars --limit=10\n" +
     "    gh search repos --language=python --stars='>100' --limit=10\n" +
@@ -136,14 +137,71 @@ program
   )
   .option("--refresh", "force refresh existing data")
   .option("--label <label>", "only issues with this label")
-  .action(async (repoArg: string, opts: any) => {
+  .option("--all", "scan all known companies from database")
+  .action(async (repoArg: string | undefined, opts: any) => {
+    const svc = getService();
+
+    if (opts.all) {
+      const companies = svc.listCompanies("stars");
+      if (companies.length === 0) {
+        console.log("\nNo companies in database. Add some with `gogetajob scan <owner/repo>`.\n");
+        return;
+      }
+      console.log(`\n🔍 Scanning all ${companies.length} companies...\n`);
+      for (const c of companies) {
+        try {
+          const [owner, repo] = c.full_name.split("/");
+          console.log(`── ${c.full_name} ──`);
+          const info = gh.getRepoInfo(owner, repo);
+          const prStats = gh.getPrStats(owner, repo, 50);
+          svc.upsertCompany({
+            owner: info.owner, repo: info.repo,
+            description: info.description, language: info.language,
+            stars: info.stars, forks: info.forks, open_issues: info.open_issues,
+            pr_merge_rate: prStats.merge_rate,
+            avg_response_hours: prStats.avg_response_hours !== null ? prStats.avg_response_hours : undefined,
+            has_contributing_guide: info.has_contributing, last_commit_at: info.last_push,
+          });
+          console.log(`  ⭐ ${info.stars} stars | 📊 ${(prStats.merge_rate * 100).toFixed(0)}% merge rate`);
+          const issues = gh.getIssues(owner, repo, { limit: 50, labels: opts.label });
+          let added = 0;
+          const openIssueNumbers = new Set<number>();
+          for (const issue of issues) {
+            openIssueNumbers.add(issue.number);
+            const wasAdded = svc.upsertJob(c.id, {
+              issue_number: issue.number,
+              title: issue.title,
+              body: issue.body,
+              labels: issue.labels,
+              url: issue.url,
+              state: issue.state,
+              comments_count: issue.comments,
+            });
+            if (wasAdded) added++;
+          }
+          svc.closeStaleJobs(c.id, openIssueNumbers);
+          if (added > 0) console.log(`  📋 ${added} new issues`);
+          console.log();
+        } catch (e: any) {
+          console.error(`  ⚠️ Failed: ${e.message}\n`);
+        }
+      }
+      console.log("Done!\n");
+      return;
+    }
+
+    if (!repoArg) {
+      console.error("Error: provide a repo (owner/repo) or use --all");
+      process.exit(1);
+    }
+
     const [owner, repo] = repoArg.split("/");
     if (!owner || !repo) {
       console.error("Error: format should be owner/repo");
       process.exit(1);
     }
 
-    const svc = getService();
+    // svc already declared above for --all path
 
     // 1. Get/update company info
     console.log(`\n🔍 Scanning ${owner}/${repo}...`);
@@ -1057,7 +1115,8 @@ program
 
     const myPRs = gh.getMyPRs(owner, repo);
     if (myPRs.length === 0) {
-      console.log("  No PRs found by you in this repo.\n");
+      console.log("  No PRs found by you in this repo.");
+      console.log("  💡 If you just created a PR, GitHub may need a few seconds to index it — try again shortly.\n");
       return;
     }
 
