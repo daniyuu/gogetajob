@@ -172,7 +172,7 @@ export class JobService {
       has_bounty: data.has_bounty ? 1 : 0,
       bounty_amount: data.bounty_amount ?? null,
       url: data.url ?? null,
-      state: data.state ?? "open",
+      state: (data.state ?? "open").toLowerCase(),
       comments_count: data.comments_count ?? 0,
     };
     const result = stmt.run(params);

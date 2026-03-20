@@ -64,7 +64,13 @@ export function formatWorkEntry(entry: any): string {
     done: "✅",
     dropped: "❌",
   };
-  const icon = statusIcon[entry.status] || "⚪";
+  // Distinguish merged vs closed for done entries
+  let icon = statusIcon[entry.status] || "⚪";
+  if (entry.status === "done" && entry.pr_status) {
+    const prSt = entry.pr_status.toLowerCase();
+    if (prSt === "closed") icon = "🚫";  // closed without merge
+    // merged stays ✅
+  }
   const tokens = entry.tokens_used ? chalk.gray(` (${entry.tokens_used} tokens)`) : "";
   const workType = entry.work_type || "pr";
 
