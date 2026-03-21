@@ -557,7 +557,7 @@ program
 program
   .command("start <ref>")
   .description("Take a job + fork/clone/branch — ready to code (format: owner/repo#issue_number)")
-  .option("--dir <path>", "custom work directory", "/tmp/work")
+  .option("--dir <path>", "custom work directory", "~/repos/forks")
   .option("--force", "override self-filed issue guard")
   .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
@@ -644,7 +644,7 @@ program
   .option("--title <text>", "PR title (default: auto from job title)")
   .option("--tokens <count>", "tokens consumed")
   .option("--notes <text>", "completion notes")
-  .option("--dir <path>", "work directory", "/tmp/work")
+  .option("--dir <path>", "work directory", "~/repos/forks")
   .action((ref: string, opts: any) => {
     const parsed = parseRef(ref);
     const svc = getService();
@@ -1201,7 +1201,7 @@ program
 program
   .command("audit <repo>")
   .description("Audit a repo — analyze codebase health and suggest improvements")
-  .option("--dir <path>", "work directory", "/tmp/work")
+  .option("--dir <path>", "work directory", "~/repos/forks")
   .option("--create-issues", "create GitHub issues for findings")
   .option("--tokens <count>", "tokens consumed for this audit (split across created issues)")
   .action((repoArg: string, opts: any) => {
