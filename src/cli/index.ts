@@ -963,6 +963,20 @@ program
           }
         }
 
+        // Check PR discussion comments (issues/{pr_number}/comments — not reviews)
+        if (prOwner && prRepo && entry.pr_number) {
+          try {
+            const prComments = gh.getIssueComments(prOwner, prRepo, entry.pr_number);
+            const humanPrComments = prComments.filter((c: any) => !isBot(c.author));
+            if (humanPrComments.length > 0) {
+              console.log(`     👤 ${humanPrComments.length} PR comment(s) from humans:`);
+              for (const c of humanPrComments.slice(0, 3)) {
+                console.log(`        ${c.author}: ${c.body.slice(0, 80)}${c.body.length > 80 ? "..." : ""}`);
+              }
+            }
+          } catch {}
+        }
+
         // Check linked issue comments for maintainer feedback
         if (entry.issue_number && prOwner && prRepo) {
           try {
