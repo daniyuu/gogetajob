@@ -898,6 +898,9 @@ program
     const total = prEntries.length + issueEntries.length;
     console.log(`\n🔄 Syncing ${total} item(s)...\n`);
 
+    const KNOWN_BOTS = ["coderabbitai", "github-actions", "github-actions[bot]", "dependabot", "dependabot[bot]", "codecov", "codecov[bot]", "netlify", "netlify[bot]", "vercel", "vercel[bot]", "sonarcloud", "sonarcloud[bot]"];
+    const isBot = (author: string) => KNOWN_BOTS.includes(author.toLowerCase()) || author.endsWith("[bot]");
+
     let merged = 0, needsAction = 0, open = 0, closed = 0;
     let issueAdopted = 0, issueOpen = 0, issueClosed = 0;
 
@@ -937,9 +940,14 @@ program
           } else {
             // Has review comments/suggestions
             const commentReviews = status.reviews.filter((r: any) => r.state === "COMMENTED" && r.body.length > 0);
-            console.log(`     💬 ${commentReviews.length} review comment(s) — check and respond!`);
-            for (const r of commentReviews.slice(0, 3)) {
-              console.log(`        ${r.author}: ${r.body.slice(0, 80)}${r.body.length > 80 ? "..." : ""}`);
+            const humanComments = commentReviews.filter((r: any) => !isBot(r.author));
+            const botComments = commentReviews.filter((r: any) => isBot(r.author));
+            console.log(`     💬 ${commentReviews.length} review comment(s) (${humanComments.length} human, ${botComments.length} bot) — check and respond!`);
+            for (const r of humanComments.slice(0, 3)) {
+              console.log(`        👤 ${r.author}: ${r.body.slice(0, 80)}${r.body.length > 80 ? "..." : ""}`);
+            }
+            for (const r of botComments.slice(0, 2)) {
+              console.log(`        🤖 ${r.author}: ${r.body.slice(0, 80)}${r.body.length > 80 ? "..." : ""}`);
             }
           }
           needsAction++;
@@ -953,6 +961,20 @@ program
           } else if (status.ciStatus === "PENDING") {
             console.log(`     ⏳ CI running...`);
           }
+        }
+
+        // Check linked issue comments for maintainer feedback
+        if (entry.issue_number && prOwner && prRepo) {
+          try {
+            const issueComments = gh.getIssueComments(prOwner, prRepo, entry.issue_number);
+            const humanIssueComments = issueComments.filter((c: any) => !isBot(c.author));
+            if (humanIssueComments.length > 0) {
+              console.log(`     📋 Issue #${entry.issue_number} has ${humanIssueComments.length} human comment(s):`);
+              for (const c of humanIssueComments.slice(0, 3)) {
+                console.log(`        ${c.author}: ${c.body.slice(0, 80)}${c.body.length > 80 ? "..." : ""}`);
+              }
+            }
+          } catch {}
         }
 
         if (status.state === "MERGED") merged++;

@@ -421,6 +421,17 @@ export function getIssueStatus(owner: string, repo: string, issueNumber: number)
   return { state, comments, hasLinkedPR: hasPR, hasNonAuthorComment };
 }
 
+/** Get comments on an issue */
+export function getIssueComments(owner: string, repo: string, issueNumber: number): Array<{author: string, body: string, created: string}> {
+  try {
+    const raw = gh(`api repos/${owner}/${repo}/issues/${issueNumber}/comments --jq '[.[] | {author: .user.login, body: .body, created: .created_at}]'`);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
 export interface MyPRInfo {
   number: number;
   title: string;
